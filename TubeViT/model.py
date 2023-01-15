@@ -18,7 +18,6 @@ class Encoder(nn.Module):
     """
     def __init__(
             self,
-            pos_embedding: Tensor,
             num_layers: int,
             num_heads: int,
             hidden_dim: int,
@@ -28,9 +27,6 @@ class Encoder(nn.Module):
             norm_layer: Callable[..., nn.Module] = partial(nn.LayerNorm, eps=1e-6),
     ):
         super().__init__()
-        # Note that batch_size is on the first dim because
-        # we have batch_first=True in nn.MultiAttention() by default
-        self.pos_embedding = pos_embedding
         self.dropout = nn.Dropout(dropout)
         layers: OrderedDict[str, nn.Module] = OrderedDict()
         for i in range(num_layers):
@@ -47,7 +43,6 @@ class Encoder(nn.Module):
 
     def forward(self, x: Tensor):
         torch._assert(x.dim() == 3, f"Expected (batch_size, seq_length, hidden_dim) got {x.shape}")
-        x = x + self.pos_embedding
         return self.ln(self.layers(self.dropout(x)))
 
 
@@ -104,13 +99,14 @@ class TubeViT(nn.Module):
         # Add a class token
         self.class_token = nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
 
-        self.encoder = Encoder(pos_embedding=self.pos_embedding,
-                               num_layers=num_layers,
-                               num_heads=num_heads,
-                               hidden_dim=self.hidden_dim,
-                               mlp_dim=mlp_dim,
-                               dropout=dropout,
-                               attention_dropout=attention_dropout)
+        self.encoder = Encoder(
+            num_layers=num_layers,
+            num_heads=num_heads,
+            hidden_dim=self.hidden_dim,
+            mlp_dim=mlp_dim,
+            dropout=dropout,
+            attention_dropout=attention_dropout,
+        )
 
         heads_layers: OrderedDict[str, nn.Module] = OrderedDict()
         if representation_size is None:
@@ -154,6 +150,8 @@ class TubeViT(nn.Module):
         # Expand the class token to the full batch
         batch_class_token = self.class_token.expand(n, -1, -1)
         x = torch.cat([batch_class_token, x], dim=1)
+
+        x = x + self.pos_embedding
 
         x = self.encoder(x)
 
