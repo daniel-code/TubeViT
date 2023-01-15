@@ -131,14 +131,16 @@ class TubeViT(nn.Module):
             else:
                 weight = F.interpolate(self.conv_proj_weight, self.kernel_sizes[i], mode='trilinear')
 
-            tmp = F.conv3d(x[:, :, self.offsets[i][0]:, self.offsets[i][1]:, self.offsets[i][2]:],
-                           weight,
-                           bias=self.conv_proj_bias[i],
-                           stride=self.strides[i])
+            tube = F.conv3d(
+                x[:, :, self.offsets[i][0]:, self.offsets[i][1]:, self.offsets[i][2]:],
+                weight,
+                bias=self.conv_proj_bias[i],
+                stride=self.strides[i],
+            )
 
-            tmp = tmp.reshape((n, self.hidden_dim, -1))
+            tube = tube.reshape((n, self.hidden_dim, -1))
 
-            tubes.append(tmp)
+            tubes.append(tube)
 
         x = torch.cat(tubes, dim=-1)
         x = x.permute(0, 2, 1)
