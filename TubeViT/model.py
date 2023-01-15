@@ -192,9 +192,9 @@ class TubeViT(nn.Module):
                     for x in range(tube_shape[2]):
                         for w in range(tube_shape[3]):
                             tmp[6 * j:6 * (j + 1), t, x, w] = _position_embedding_code(
-                                t=t * self.strides[i][0] + self.offsets[i][0],
-                                x=x * self.strides[i][1] + self.offsets[i][1],
-                                y=w * self.strides[i][2] + self.offsets[i][2],
+                                t=t * self.strides[i][0] + self.offsets[i][0] + self.kernel_sizes[i][0] // 2,
+                                x=x * self.strides[i][1] + self.offsets[i][1] + self.kernel_sizes[i][1] // 2,
+                                y=w * self.strides[i][2] + self.offsets[i][2] + self.kernel_sizes[i][2] // 2,
                                 j=j,
                             )
             tmp = tmp.reshape((self.hidden_dim, -1))
