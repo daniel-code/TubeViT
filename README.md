@@ -5,3 +5,9 @@ in "[Rethinking Video ViTs: Sparse Video Tubes for Joint Image and Video Learnin
 
 ![](assets/fig1.png)
 ![](assets/fig2.png)
+
+
+# TODO
+- [ ] Space To Depth
+- [ ] config of tubes
+- [ ] training and testing
