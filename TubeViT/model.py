@@ -46,6 +46,47 @@ class Encoder(nn.Module):
         return self.ln(self.layers(self.dropout(x)))
 
 
+class SparseTubesTokenizer(nn.Module):
+    def __init__(self, hidden_dim, kernel_sizes, strides, offsets):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.kernel_sizes = kernel_sizes
+        self.strides = strides
+        self.offsets = offsets
+
+        self.conv_proj_weight = nn.Parameter(torch.empty((self.hidden_dim, 3, *self.kernel_sizes[0])).normal_(),
+                                             requires_grad=True)
+
+        self.register_parameter('conv_proj_weight', self.conv_proj_weight)
+
+        self.conv_proj_bias = nn.Parameter(torch.zeros(len(self.kernel_sizes), self.hidden_dim), requires_grad=True)
+        self.register_parameter('conv_proj_bias', self.conv_proj_bias)
+
+    def forward(self, x: Tensor) -> Tensor:
+        n, c, t, h, w = x.shape
+        tubes = []
+        for i in range(len(self.kernel_sizes)):
+            if i == 0:
+                weight = self.conv_proj_weight
+            else:
+                weight = F.interpolate(self.conv_proj_weight, self.kernel_sizes[i], mode='trilinear')
+
+            tube = F.conv3d(
+                x[:, :, self.offsets[i][0]:, self.offsets[i][1]:, self.offsets[i][2]:],
+                weight,
+                bias=self.conv_proj_bias[i],
+                stride=self.strides[i],
+            )
+
+            tube = tube.reshape((n, self.hidden_dim, -1))
+
+            tubes.append(tube)
+
+        x = torch.cat(tubes, dim=-1)
+        x = x.permute(0, 2, 1)
+        return x
+
+
 class TubeViT(nn.Module):
     def __init__(
         self,
@@ -63,7 +104,6 @@ class TubeViT(nn.Module):
         self.video_shape = np.array(video_shape)
         self.num_classes = num_classes
         self.hidden_dim = hidden_dim
-
         self.kernel_sizes = (
             (8, 8, 8),
             (16, 4, 4),
@@ -84,14 +124,8 @@ class TubeViT(nn.Module):
             (0, 16, 16),
             (0, 0, 0),
         )
-
-        self.conv_proj_weight = nn.Parameter(torch.empty((self.hidden_dim, 3, *self.kernel_sizes[0])).normal_(),
-                                             requires_grad=True)
-
-        self.register_parameter('conv_proj_weight', self.conv_proj_weight)
-
-        self.conv_proj_bias = nn.Parameter(torch.zeros(len(self.kernel_sizes), self.hidden_dim), requires_grad=True)
-        self.register_parameter('conv_proj_bias', self.conv_proj_bias)
+        self.sparse_tubes_tokenizer = SparseTubesTokenizer(self.hidden_dim, self.kernel_sizes, self.strides,
+                                                           self.offsets)
 
         self.pos_embedding = nn.Parameter(self._generate_position_embedding(), requires_grad=False)
         self.register_parameter('pos_embedding', self.pos_embedding)
@@ -118,33 +152,8 @@ class TubeViT(nn.Module):
 
         self.heads = nn.Sequential(heads_layers)
 
-    def _process_input(self, x: Tensor) -> Tensor:
-        n, c, t, h, w = x.shape
-        tubes = []
-        for i in range(len(self.kernel_sizes)):
-            if i == 0:
-                weight = self.conv_proj_weight
-            else:
-                weight = F.interpolate(self.conv_proj_weight, self.kernel_sizes[i], mode='trilinear')
-
-            tube = F.conv3d(
-                x[:, :, self.offsets[i][0]:, self.offsets[i][1]:, self.offsets[i][2]:],
-                weight,
-                bias=self.conv_proj_bias[i],
-                stride=self.strides[i],
-            )
-
-            tube = tube.reshape((n, self.hidden_dim, -1))
-
-            tubes.append(tube)
-
-        x = torch.cat(tubes, dim=-1)
-        x = x.permute(0, 2, 1)
-
-        return x
-
     def forward(self, x):
-        x = self._process_input(x)
+        x = self.sparse_tubes_tokenizer(x)
         n = x.shape[0]
 
         # Expand the class token to the full batch
