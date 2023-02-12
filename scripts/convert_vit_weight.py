@@ -1,3 +1,4 @@
+import click
 import numpy as np
 import torch
 from torch import Tensor
@@ -6,16 +7,22 @@ from torchvision.models import ViT_B_16_Weights
 
 from TubeViT.model import TubeViT
 
-if __name__ == '__main__':
-    num_classes = 101
-    batch_size = 2
-    frames_per_clip = 32
 
-    x = np.random.random((batch_size, 3, frames_per_clip, 224, 224))
+@click.command()
+@click.option('-nc', '--num-classes', type=int, default=101, help='num of classes of dataset.')
+@click.option('-f', '--frames-per-clip', type=int, default=32, help='frame per clip.')
+@click.option('-v', '--video-size', type=click.Tuple([int, int]), default=(224, 224), help='frame per clip.')
+@click.option('-o',
+              '--output-path',
+              type=click.Path(),
+              default='tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt',
+              help='output model weight name.')
+def main(num_classes, frames_per_clip, video_size, output_path):
+    x = np.random.random((1, 3, frames_per_clip, video_size[0], video_size[1]))
     x = Tensor(x)
     print('x: ', x.shape)
 
-    y = np.random.randint(0, 1, size=(batch_size, num_classes))
+    y = np.random.randint(0, 1, size=(1, num_classes))
     y = Tensor(y)
     print('y: ', y.shape)
 
@@ -45,4 +52,8 @@ if __name__ == '__main__':
     model.load_state_dict(weights, strict=False)
     model.sparse_tubes_tokenizer.conv_proj_weight = torch.nn.Parameter(conv_proj_weight, requires_grad=True)
 
-    torch.save(model.state_dict(), 'tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt')
+    torch.save(model.state_dict(), output_path)
+
+
+if __name__ == '__main__':
+    main()
