@@ -64,7 +64,8 @@ class SparseTubesTokenizer(nn.Module):
         self.register_parameter('conv_proj_bias', self.conv_proj_bias)
 
     def forward(self, x: Tensor) -> Tensor:
-        n, c, t, h, w = x.shape
+        n, t, c, h, w = x.shape
+        x = x.permute(0, 2, 1, 3, 4)  # TCHW -> CTHW
         tubes = []
         for i in range(len(self.kernel_sizes)):
             if i == 0:
@@ -92,7 +93,7 @@ class TubeViT(nn.Module):
     def __init__(
         self,
         num_classes: int,
-        video_shape: Union[List[int], np.ndarray],
+        video_shape: Union[List[int], np.ndarray],  # TCHW
         num_layers: int,
         num_heads: int,
         hidden_dim: int,
@@ -177,8 +178,9 @@ class TubeViT(nn.Module):
         stride = np.array(stride)
         offset = np.array(offset)
 
-        output = np.ceil((self.video_shape[1:] - offset - kernel_size + 1) / stride).astype(int)
-        output = np.concatenate([np.array([self.hidden_dim / 6]), output]).astype(int)
+        output = np.ceil((self.video_shape[[0, 2, 3]] - offset - kernel_size + 1) / stride).astype(int)
+        output = np.concatenate([np.array([self.hidden_dim / 6]),
+                                 output]).astype(int)  # 6 elements (a sine and cosine value for each x; y; t)
 
         return output
 
