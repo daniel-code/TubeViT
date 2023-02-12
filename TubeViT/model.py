@@ -133,7 +133,8 @@ class TubeViT(nn.Module):
         self.register_parameter('pos_embedding', self.pos_embedding)
 
         # Add a class token
-        self.class_token = nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
+        self.class_token = nn.Parameter(torch.zeros(1, 1, self.hidden_dim), requires_grad=True)
+        self.register_parameter('class_token', self.class_token)
 
         self.encoder = Encoder(
             num_layers=num_layers,
