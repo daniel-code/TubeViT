@@ -15,6 +15,7 @@ class Encoder(nn.Module):
     """
     Transformer Model Encoder for sequence to sequence translation.
     Code from torch.
+    Move pos_embedding to TubeViT
     """
     def __init__(
             self,
