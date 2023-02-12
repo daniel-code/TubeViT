@@ -1,15 +1,17 @@
 import numpy as np
+import torch
 from torch import Tensor
+from torch.nn import functional as F
 from torchvision.models import ViT_B_16_Weights
 
 from TubeViT.model import TubeViT
 
 if __name__ == '__main__':
-    num_classes = 1
+    num_classes = 101
     batch_size = 2
     frames_per_clip = 32
 
-    x = np.random.random((batch_size, 3, frames_per_clip, 224, 224))
+    x = np.random.random((batch_size, frames_per_clip, 3, 224, 224))
     x = Tensor(x)
     print('x: ', x.shape)
 
@@ -17,18 +19,30 @@ if __name__ == '__main__':
     y = Tensor(y)
     print('y: ', y.shape)
 
-    model = TubeViT(num_classes=num_classes,
-                    video_shape=x.shape[1:],
-                    num_layers=12,
-                    num_heads=12,
-                    hidden_dim=768,
-                    mlp_dim=3072)
+    model = TubeViT(
+        num_classes=num_classes,
+        video_shape=x.shape[1:],
+        num_layers=12,
+        num_heads=12,
+        hidden_dim=768,
+        mlp_dim=3072,
+    )
 
     weights = ViT_B_16_Weights.DEFAULT.get_state_dict(progress=True)
+
+    # inflated vit path convolution layer weight
+    conv_proj_weight = weights['conv_proj.weight']
+    conv_proj_weight = F.interpolate(conv_proj_weight, (8, 8), mode='bilinear')
+    conv_proj_weight = torch.unsqueeze(conv_proj_weight, dim=2)
+    conv_proj_weight = conv_proj_weight.repeat(1, 1, 8, 1, 1)
+    conv_proj_weight = conv_proj_weight / 8.0
+
     # remove missmatch parameters
     weights.pop('encoder.pos_embedding')
     weights.pop('heads.head.weight')
     weights.pop('heads.head.bias')
 
     model.load_state_dict(weights, strict=False)
-    print(model)
+    model.sparse_tubes_tokenizer.conv_proj_weight = torch.nn.Parameter(conv_proj_weight, requires_grad=True)
+
+    torch.save(model.state_dict(), 'tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt')
