@@ -268,6 +268,21 @@ class TubeViTLightningModule(pl.LightningModule):
 
         return loss
 
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self(x)
+
+        loss = self.loss_func(y_hat, y)
+
+        y_pred = torch.softmax(y_hat, dim=-1)
+
+        # Logging to TensorBoard by default
+        self.log('val_loss', loss, prog_bar=True)
+        self.log('val_acc', accuracy(y_pred, y, task='multiclass', num_classes=self.num_classes), prog_bar=True)
+        self.log('val_f1', f1_score(y_pred, y, task='multiclass', num_classes=self.num_classes), prog_bar=True)
+
+        return loss
+
     def configure_optimizers(self):
         optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
         return optimizer
