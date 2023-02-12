@@ -4,9 +4,11 @@ from typing import Callable
 from typing import List, Union
 
 import numpy as np
+import pytorch_lightning as pl
 import torch
-from torch import nn, Tensor
+from torch import nn, Tensor, optim
 from torch.nn import functional as F
+from torchmetrics.functional import accuracy, f1_score
 from torchvision.models.vision_transformer import EncoderBlock
 from typing_extensions import OrderedDict
 
@@ -215,3 +217,58 @@ class TubeViT(nn.Module):
         position_embedding = position_embedding.permute(1, 0)
         position_embedding = torch.nn.Parameter(position_embedding, requires_grad=False)
         return position_embedding
+
+
+class TubeViTLightningModule(pl.LightningModule):
+    def __init__(self,
+                 num_classes,
+                 video_shape,
+                 num_layers,
+                 num_heads,
+                 hidden_dim,
+                 mlp_dim,
+                 weight_path: str = None,
+                 **kwargs):
+        super().__init__()
+        self.num_classes = num_classes
+        self.model = TubeViT(
+            num_classes=num_classes,
+            video_shape=video_shape,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            hidden_dim=hidden_dim,
+            mlp_dim=mlp_dim,
+        )
+
+        if 'lr' in kwargs:
+            self.lr = kwargs['lr']
+        else:
+            self.lr = 1e-6
+
+        self.loss_func = nn.CrossEntropyLoss(label_smoothing=0.1)
+        self.example_input_array = Tensor(1, *video_shape)
+
+        if weight_path is not None:
+            self.model.load_state_dict(torch.load(weight_path), strict=False)
+
+    def forward(self, x):
+        return self.model(x)
+
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self(x)
+
+        loss = self.loss_func(y_hat, y)
+
+        y_pred = torch.softmax(y_hat, dim=-1)
+
+        # Logging to TensorBoard by default
+        self.log('train_loss', loss, prog_bar=True)
+        self.log('train_acc', accuracy(y_pred, y, task='multiclass', num_classes=self.num_classes), prog_bar=True)
+        self.log('train_f1', f1_score(y_pred, y, task='multiclass', num_classes=self.num_classes), prog_bar=True)
+
+        return loss
+
+    def configure_optimizers(self):
+        optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
+        return optimizer
