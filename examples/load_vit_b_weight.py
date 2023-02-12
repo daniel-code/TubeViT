@@ -11,7 +11,7 @@ if __name__ == '__main__':
     batch_size = 2
     frames_per_clip = 32
 
-    x = np.random.random((batch_size, frames_per_clip, 3, 224, 224))
+    x = np.random.random((batch_size, 3, frames_per_clip, 224, 224))
     x = Tensor(x)
     print('x: ', x.shape)
 
