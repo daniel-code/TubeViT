@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# ignore video meta
+*.pickle
+
+# ignore model weight
+*.pt
