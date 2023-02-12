@@ -128,7 +128,7 @@ class TubeViT(nn.Module):
         self.sparse_tubes_tokenizer = SparseTubesTokenizer(self.hidden_dim, self.kernel_sizes, self.strides,
                                                            self.offsets)
 
-        self.pos_embedding = nn.Parameter(self._generate_position_embedding(), requires_grad=False)
+        self.pos_embedding = self._generate_position_embedding()
         self.register_parameter('pos_embedding', self.pos_embedding)
 
         # Add a class token
@@ -182,8 +182,8 @@ class TubeViT(nn.Module):
 
         return output
 
-    def _generate_position_embedding(self) -> Tensor:
-        def _position_embedding_code(t, x, y, j, tau=100_000) -> Tensor:
+    def _generate_position_embedding(self) -> torch.nn.Parameter:
+        def _position_embedding_code(t, x, y, j, tau=10_000) -> Tensor:
             w = 1 / (tau**j)
             p_jt = math.sin(t * w), math.cos(t * w)
             p_jx = math.sin(x * w), math.cos(x * w)
@@ -210,4 +210,5 @@ class TubeViT(nn.Module):
 
         position_embedding = torch.cat(position_embedding, dim=-1)
         position_embedding = position_embedding.permute(1, 0)
+        position_embedding = torch.nn.Parameter(position_embedding, requires_grad=False)
         return position_embedding
