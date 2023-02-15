@@ -9,6 +9,8 @@ from torch import Tensor
 from torch.utils.data import DataLoader, RandomSampler
 from torchvision.datasets import UCF101
 from torchvision.transforms import transforms as T
+from torchvision.transforms._functional_video import resize
+from torchvision.transforms._transforms_video import RandomResizedCropVideo, RandomHorizontalFlipVideo, ToTensorVideo
 
 from TubeViT.model import TubeViTLightningModule
 
@@ -30,19 +32,12 @@ class ResizedVideo:
     def __call__(self, clip: torch.Tensor):
         """
         Args:
-            clip (torch.tensor): Video clip to be cropped. Size is (T, C, H, W)
+            clip (torch.tensor): Video clip to be cropped. Size is (C, T, H, W)
         Returns:
-            torch.tensor: randomly cropped/resized video clip.
-                size is (T, C, H, W)
+            torch.tensor: resized video clip.
+                size is (C, T, H, W)
         """
-
-        # Convert to CTHW
-        clip = clip.permute(1, 0, 2, 3)
-        clip = clip / 255.0
-
-        clip = torch.nn.functional.interpolate(clip, size=self.size, mode=self.interpolation_mode, align_corners=False)
-
-        return clip
+        return resize(clip, self.size, self.interpolation_mode)
 
     def __repr__(self):
         return self.__class__.__name__ + \
@@ -81,7 +76,14 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
     pl.seed_everything(seed)
 
     train_transform = T.Compose([
-        ResizedVideo(video_size),
+        ToTensorVideo(),
+        RandomHorizontalFlipVideo(),
+        RandomResizedCropVideo(size=video_size),
+    ])
+
+    test_transform = T.Compose([
+        ToTensorVideo(),
+        ResizedVideo(size=video_size),
     ])
 
     train_metadata_file = 'ucf101-train-meta.pickle'
@@ -96,8 +98,8 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         _precomputed_metadata=train_precomputed_metadata,
         frames_per_clip=frames_per_clip,
         train=True,
-        output_format='TCHW',
-        num_workers=8,
+        output_format='THWC',
+        num_workers=4,
         transform=train_transform,
     )
 
@@ -117,9 +119,9 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         _precomputed_metadata=val_precomputed_metadata,
         frames_per_clip=frames_per_clip,
         train=False,
-        output_format='TCHW',
-        num_workers=8,
-        transform=train_transform,
+        output_format='THWC',
+        num_workers=4,
+        transform=test_transform,
     )
 
     if not os.path.exists(val_metadata_file):
