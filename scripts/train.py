@@ -69,10 +69,11 @@ class MyUCF101(UCF101):
 @click.option('-f', '--frames-per-clip', type=int, default=32, help='frame per clip.')
 @click.option('-v', '--video-size', type=click.Tuple([int, int]), default=(224, 224), help='frame per clip.')
 @click.option('--max-epochs', type=int, default=5, help='max epochs.')
+@click.option('--num-workers', type=int, default=0)
 @click.option('--fast-dev-run', type=bool, is_flag=True, show_default=True, default=False)
 @click.option('--seed', type=int, default=42, help='random seed.')
-def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip, video_size, max_epochs, fast_dev_run,
-         seed):
+def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip, video_size, max_epochs, num_workers,
+         fast_dev_run, seed):
     pl.seed_everything(seed)
 
     train_transform = T.Compose([
@@ -99,7 +100,7 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         frames_per_clip=frames_per_clip,
         train=True,
         output_format='THWC',
-        num_workers=4,
+        num_workers=num_workers,
         transform=train_transform,
     )
 
@@ -120,7 +121,7 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         frames_per_clip=frames_per_clip,
         train=False,
         output_format='THWC',
-        num_workers=4,
+        num_workers=num_workers,
         transform=test_transform,
     )
 
@@ -131,7 +132,7 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
     train_sampler = RandomSampler(train_set, num_samples=len(train_set) // 10)
     train_dataloader = DataLoader(train_set,
                                   batch_size=batch_size,
-                                  num_workers=4,
+                                  num_workers=num_workers,
                                   shuffle=False,
                                   drop_last=True,
                                   sampler=train_sampler)
@@ -139,7 +140,7 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
     val_sampler = RandomSampler(val_set, num_samples=len(val_set) // 10)
     val_dataloader = DataLoader(val_set,
                                 batch_size=batch_size,
-                                num_workers=4,
+                                num_workers=num_workers,
                                 shuffle=False,
                                 drop_last=True,
                                 sampler=val_sampler)
