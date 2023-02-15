@@ -10,7 +10,10 @@ in "[Rethinking Video ViTs: Sparse Video Tubes for Joint Image and Video Learnin
   - [x] Interpolated Kernels
   - [ ] Space To Depth
   - [ ] config of tubes
-- [ ] training and testing
+- [ ] pipeline
+  - [x] training
+  - [ ] evaluating
+  - [ ] inference
 
 # Model Architecture
 
