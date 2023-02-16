@@ -9,6 +9,8 @@ from torch import Tensor
 from torch.utils.data import DataLoader, RandomSampler
 from torchvision.datasets import UCF101
 from torchvision.transforms import transforms as T
+from torchvision.transforms._functional_video import resize
+from torchvision.transforms._transforms_video import RandomResizedCropVideo, RandomHorizontalFlipVideo, ToTensorVideo
 
 from TubeViT.model import TubeViTLightningModule
 
@@ -30,19 +32,12 @@ class ResizedVideo:
     def __call__(self, clip: torch.Tensor):
         """
         Args:
-            clip (torch.tensor): Video clip to be cropped. Size is (T, C, H, W)
+            clip (torch.tensor): Video clip to be cropped. Size is (C, T, H, W)
         Returns:
-            torch.tensor: randomly cropped/resized video clip.
-                size is (T, C, H, W)
+            torch.tensor: resized video clip.
+                size is (C, T, H, W)
         """
-
-        # Convert to CTHW
-        clip = clip.permute(1, 0, 2, 3)
-        clip = clip / 255.0
-
-        clip = torch.nn.functional.interpolate(clip, size=self.size, mode=self.interpolation_mode, align_corners=False)
-
-        return clip
+        return resize(clip, self.size, self.interpolation_mode)
 
     def __repr__(self):
         return self.__class__.__name__ + \
@@ -74,14 +69,22 @@ class MyUCF101(UCF101):
 @click.option('-f', '--frames-per-clip', type=int, default=32, help='frame per clip.')
 @click.option('-v', '--video-size', type=click.Tuple([int, int]), default=(224, 224), help='frame per clip.')
 @click.option('--max-epochs', type=int, default=5, help='max epochs.')
+@click.option('--num-workers', type=int, default=0)
 @click.option('--fast-dev-run', type=bool, is_flag=True, show_default=True, default=False)
 @click.option('--seed', type=int, default=42, help='random seed.')
-def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip, video_size, max_epochs, fast_dev_run,
-         seed):
+def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip, video_size, max_epochs, num_workers,
+         fast_dev_run, seed):
     pl.seed_everything(seed)
 
     train_transform = T.Compose([
-        ResizedVideo(video_size),
+        ToTensorVideo(),
+        RandomHorizontalFlipVideo(),
+        RandomResizedCropVideo(size=video_size),
+    ])
+
+    test_transform = T.Compose([
+        ToTensorVideo(),
+        ResizedVideo(size=video_size),
     ])
 
     train_metadata_file = 'ucf101-train-meta.pickle'
@@ -96,8 +99,8 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         _precomputed_metadata=train_precomputed_metadata,
         frames_per_clip=frames_per_clip,
         train=True,
-        output_format='TCHW',
-        num_workers=8,
+        output_format='THWC',
+        num_workers=num_workers,
         transform=train_transform,
     )
 
@@ -117,9 +120,9 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         _precomputed_metadata=val_precomputed_metadata,
         frames_per_clip=frames_per_clip,
         train=False,
-        output_format='TCHW',
-        num_workers=8,
-        transform=train_transform,
+        output_format='THWC',
+        num_workers=num_workers,
+        transform=test_transform,
     )
 
     if not os.path.exists(val_metadata_file):
@@ -129,7 +132,7 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
     train_sampler = RandomSampler(train_set, num_samples=len(train_set) // 10)
     train_dataloader = DataLoader(train_set,
                                   batch_size=batch_size,
-                                  num_workers=4,
+                                  num_workers=num_workers,
                                   shuffle=False,
                                   drop_last=True,
                                   sampler=train_sampler)
@@ -137,7 +140,7 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
     val_sampler = RandomSampler(val_set, num_samples=len(val_set) // 10)
     val_dataloader = DataLoader(val_set,
                                 batch_size=batch_size,
-                                num_workers=4,
+                                num_workers=num_workers,
                                 shuffle=False,
                                 drop_last=True,
                                 sampler=val_sampler)
