@@ -50,10 +50,14 @@ class Encoder(nn.Module):
 
 
 class SparseTubesTokenizer(nn.Module):
-    def __init__(self, hidden_dim, kernel_sizes, strides, offsets):
+    def __init__(self, hidden_dim: int, kernel_sizes, strides, offsets, space_to_depth_rate: int = 1):
         super().__init__()
-        self.hidden_dim = hidden_dim
+        self.space_to_depth_rate = space_to_depth_rate
+        self.hidden_dim = int(hidden_dim // space_to_depth_rate)
         self.kernel_sizes = kernel_sizes
+        for i in range(len(strides)):
+            strides[i][0] = int(strides[i][0] // space_to_depth_rate)
+
         self.strides = strides
         self.offsets = offsets
 
@@ -102,33 +106,37 @@ class TubeViT(nn.Module):
         dropout: float = 0.0,
         attention_dropout: float = 0.0,
         representation_size=None,
+        space_to_depth_rate=1,
     ):
         super(TubeViT, self).__init__()
         self.video_shape = np.array(video_shape)  # CTHW
         self.num_classes = num_classes
         self.hidden_dim = hidden_dim
-        self.kernel_sizes = (
-            (8, 8, 8),
-            (16, 4, 4),
-            (4, 12, 12),
-            (1, 16, 16),
-        )
+        self.kernel_sizes = [
+            [8, 8, 8],
+            [16, 4, 4],
+            [4, 12, 12],
+            [1, 16, 16],
+        ]
 
-        self.strides = (
-            (16, 32, 32),
-            (6, 32, 32),
-            (16, 32, 32),
-            (32, 16, 16),
-        )
+        self.strides = [
+            [16, 32, 32],
+            [6, 32, 32],
+            [16, 32, 32],
+            [32, 16, 16],
+        ]
 
-        self.offsets = (
-            (0, 0, 0),
-            (4, 8, 8),
-            (0, 16, 16),
-            (0, 0, 0),
-        )
-        self.sparse_tubes_tokenizer = SparseTubesTokenizer(self.hidden_dim, self.kernel_sizes, self.strides,
-                                                           self.offsets)
+        self.offsets = [
+            [0, 0, 0],
+            [4, 8, 8],
+            [0, 16, 16],
+            [0, 0, 0],
+        ]
+        self.sparse_tubes_tokenizer = SparseTubesTokenizer(self.hidden_dim,
+                                                           self.kernel_sizes,
+                                                           self.strides,
+                                                           self.offsets,
+                                                           space_to_depth_rate=space_to_depth_rate)
 
         self.pos_embedding = self._generate_position_embedding()
         self.register_parameter('pos_embedding', self.pos_embedding)
@@ -227,6 +235,7 @@ class TubeViTLightningModule(pl.LightningModule):
                  hidden_dim,
                  mlp_dim,
                  weight_path: str = None,
+                 space_to_depth_rate: int = 1,
                  **kwargs):
         super().__init__()
         self.num_classes = num_classes
@@ -237,6 +246,7 @@ class TubeViTLightningModule(pl.LightningModule):
             num_heads=num_heads,
             hidden_dim=hidden_dim,
             mlp_dim=mlp_dim,
+            space_to_depth_rate=space_to_depth_rate,
         )
 
         if 'lr' in kwargs:
