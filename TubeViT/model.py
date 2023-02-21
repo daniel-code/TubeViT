@@ -86,7 +86,7 @@ class SparseTubesTokenizer(nn.Module):
             tubes.append(tube)
 
         x = torch.cat(tubes, dim=-1)
-        x = x.permute(0, 2, 1)
+        x = x.permute(0, 2, 1).contiguous()
         return x
 
 
@@ -213,7 +213,7 @@ class TubeViT(nn.Module):
             position_embedding.append(tmp)
 
         position_embedding = torch.cat(position_embedding, dim=-1)
-        position_embedding = position_embedding.permute(1, 0)
+        position_embedding = position_embedding.permute(1, 0).contiguous()
         position_embedding = torch.nn.Parameter(position_embedding, requires_grad=False)
         return position_embedding
 
