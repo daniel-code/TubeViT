@@ -3,6 +3,7 @@ import pickle
 from typing import Tuple, Optional, Callable
 
 import click
+import matplotlib.pyplot as plt
 import pytorch_lightning as pl
 import torch
 from torch import Tensor
@@ -10,7 +11,8 @@ from torch.utils.data import DataLoader, RandomSampler
 from torchvision.datasets import UCF101
 from torchvision.transforms import transforms as T
 from torchvision.transforms._functional_video import resize
-from torchvision.transforms._transforms_video import RandomResizedCropVideo, RandomHorizontalFlipVideo, ToTensorVideo
+from torchvision.transforms._transforms_video import RandomResizedCropVideo, RandomHorizontalFlipVideo, ToTensorVideo, \
+    NormalizeVideo
 
 from TubeViT.model import TubeViTLightningModule
 
@@ -47,9 +49,9 @@ class ResizedVideo:
 
 
 class MyUCF101(UCF101):
-    def __init__(self, frame_transform: Optional[Callable] = None, *args, **kwargs) -> None:
+    def __init__(self, transform: Optional[Callable] = None, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.frame_transform = frame_transform
+        self.transform = transform
 
     def __getitem__(self, idx: int) -> Tuple[Tensor, int]:
         video, audio, info, video_idx = self.video_clips.get_clip(idx)
@@ -72,19 +74,22 @@ class MyUCF101(UCF101):
 @click.option('--num-workers', type=int, default=0)
 @click.option('--fast-dev-run', type=bool, is_flag=True, show_default=True, default=False)
 @click.option('--seed', type=int, default=42, help='random seed.')
+@click.option('--preview-video', type=bool, is_flag=True, show_default=True, default=False, help='Show input video')
 def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip, video_size, max_epochs, num_workers,
-         fast_dev_run, seed):
+         fast_dev_run, seed, preview_video):
     pl.seed_everything(seed)
 
     train_transform = T.Compose([
         ToTensorVideo(),
         RandomHorizontalFlipVideo(),
         RandomResizedCropVideo(size=video_size),
+        NormalizeVideo(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], inplace=True)
     ])
 
     test_transform = T.Compose([
         ToTensorVideo(),
         ResizedVideo(size=video_size),
+        NormalizeVideo(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], inplace=True)
     ])
 
     train_metadata_file = 'ucf101-train-meta.pickle'
@@ -100,7 +105,6 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         frames_per_clip=frames_per_clip,
         train=True,
         output_format='THWC',
-        num_workers=num_workers,
         transform=train_transform,
     )
 
@@ -121,7 +125,6 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         frames_per_clip=frames_per_clip,
         train=False,
         output_format='THWC',
-        num_workers=num_workers,
         transform=test_transform,
     )
 
@@ -130,32 +133,49 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
             pickle.dump(val_set.metadata, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     train_sampler = RandomSampler(train_set, num_samples=len(train_set) // 10)
-    train_dataloader = DataLoader(train_set,
-                                  batch_size=batch_size,
-                                  num_workers=num_workers,
-                                  shuffle=False,
-                                  drop_last=True,
-                                  sampler=train_sampler)
+    train_dataloader = DataLoader(
+        train_set,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        shuffle=False,
+        drop_last=True,
+        sampler=train_sampler,
+    )
 
     val_sampler = RandomSampler(val_set, num_samples=len(val_set) // 10)
-    val_dataloader = DataLoader(val_set,
-                                batch_size=batch_size,
-                                num_workers=num_workers,
-                                shuffle=False,
-                                drop_last=True,
-                                sampler=val_sampler)
+    val_dataloader = DataLoader(
+        val_set,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        shuffle=False,
+        drop_last=True,
+        sampler=val_sampler,
+    )
 
     x, y = next(iter(train_dataloader))
     print(x.shape)
 
-    model = TubeViTLightningModule(num_classes=num_classes,
-                                   video_shape=x.shape[1:],
-                                   num_layers=4,
-                                   num_heads=12,
-                                   hidden_dim=768,
-                                   mlp_dim=3072,
-                                   lr=1e-4,
-                                   weight_path='tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt')
+    if preview_video:
+        x = x.permute(0, 2, 3, 4, 1)
+        fig, axs = plt.subplots(4, 8)
+        for i in range(4):
+            for j in range(8):
+                axs[i][j].imshow(x[0][i * 8 + j])
+                axs[i][j].set_xticks([])
+                axs[i][j].set_yticks([])
+        plt.tight_layout()
+        plt.show()
+
+    model = TubeViTLightningModule(
+        num_classes=num_classes,
+        video_shape=x.shape[1:],
+        num_layers=4,
+        num_heads=12,
+        hidden_dim=768,
+        mlp_dim=3072,
+        lr=1e-4,
+        weight_path='tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt',
+    )
 
     trainer = pl.Trainer(max_epochs=max_epochs, accelerator='auto', fast_dev_run=fast_dev_run)
     trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
