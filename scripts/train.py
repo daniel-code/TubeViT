@@ -11,7 +11,8 @@ from torch.utils.data import DataLoader, RandomSampler
 from torchvision.datasets import UCF101
 from torchvision.transforms import transforms as T
 from torchvision.transforms._functional_video import resize
-from torchvision.transforms._transforms_video import RandomResizedCropVideo, RandomHorizontalFlipVideo, ToTensorVideo
+from torchvision.transforms._transforms_video import RandomResizedCropVideo, RandomHorizontalFlipVideo, ToTensorVideo, \
+    NormalizeVideo
 
 from TubeViT.model import TubeViTLightningModule
 
@@ -82,11 +83,13 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         ToTensorVideo(),
         RandomHorizontalFlipVideo(),
         RandomResizedCropVideo(size=video_size),
+        NormalizeVideo(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], inplace=True)
     ])
 
     test_transform = T.Compose([
         ToTensorVideo(),
         ResizedVideo(size=video_size),
+        NormalizeVideo(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], inplace=True)
     ])
 
     train_metadata_file = 'ucf101-train-meta.pickle'
