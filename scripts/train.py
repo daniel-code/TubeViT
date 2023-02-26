@@ -105,7 +105,6 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         frames_per_clip=frames_per_clip,
         train=True,
         output_format='THWC',
-        num_workers=num_workers,
         transform=train_transform,
     )
 
@@ -126,7 +125,6 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         frames_per_clip=frames_per_clip,
         train=False,
         output_format='THWC',
-        num_workers=num_workers,
         transform=test_transform,
     )
 
