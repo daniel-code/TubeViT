@@ -3,6 +3,7 @@ import pickle
 from typing import Tuple, Optional, Callable
 
 import click
+import matplotlib.pyplot as plt
 import pytorch_lightning as pl
 import torch
 from torch import Tensor
@@ -72,8 +73,9 @@ class MyUCF101(UCF101):
 @click.option('--num-workers', type=int, default=0)
 @click.option('--fast-dev-run', type=bool, is_flag=True, show_default=True, default=False)
 @click.option('--seed', type=int, default=42, help='random seed.')
+@click.option('--preview-video', type=bool, is_flag=True, show_default=True, default=False, help='Show input video')
 def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip, video_size, max_epochs, num_workers,
-         fast_dev_run, seed):
+         fast_dev_run, seed, preview_video):
     pl.seed_everything(seed)
 
     train_transform = T.Compose([
@@ -147,6 +149,17 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
 
     x, y = next(iter(train_dataloader))
     print(x.shape)
+
+    if preview_video:
+        x = x.permute(0, 2, 3, 4, 1)
+        fig, axs = plt.subplots(4, 8)
+        for i in range(4):
+            for j in range(8):
+                axs[i][j].imshow(x[0][i * 8 + j])
+                axs[i][j].set_xticks([])
+                axs[i][j].set_yticks([])
+        plt.tight_layout()
+        plt.show()
 
     model = TubeViTLightningModule(num_classes=num_classes,
                                    video_shape=x.shape[1:],
