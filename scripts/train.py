@@ -133,20 +133,24 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
             pickle.dump(val_set.metadata, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     train_sampler = RandomSampler(train_set, num_samples=len(train_set) // 10)
-    train_dataloader = DataLoader(train_set,
-                                  batch_size=batch_size,
-                                  num_workers=num_workers,
-                                  shuffle=False,
-                                  drop_last=True,
-                                  sampler=train_sampler)
+    train_dataloader = DataLoader(
+        train_set,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        shuffle=False,
+        drop_last=True,
+        sampler=train_sampler,
+    )
 
     val_sampler = RandomSampler(val_set, num_samples=len(val_set) // 10)
-    val_dataloader = DataLoader(val_set,
-                                batch_size=batch_size,
-                                num_workers=num_workers,
-                                shuffle=False,
-                                drop_last=True,
-                                sampler=val_sampler)
+    val_dataloader = DataLoader(
+        val_set,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        shuffle=False,
+        drop_last=True,
+        sampler=val_sampler,
+    )
 
     x, y = next(iter(train_dataloader))
     print(x.shape)
@@ -162,14 +166,16 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         plt.tight_layout()
         plt.show()
 
-    model = TubeViTLightningModule(num_classes=num_classes,
-                                   video_shape=x.shape[1:],
-                                   num_layers=4,
-                                   num_heads=12,
-                                   hidden_dim=768,
-                                   mlp_dim=3072,
-                                   lr=1e-4,
-                                   weight_path='tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt')
+    model = TubeViTLightningModule(
+        num_classes=num_classes,
+        video_shape=x.shape[1:],
+        num_layers=4,
+        num_heads=12,
+        hidden_dim=768,
+        mlp_dim=3072,
+        lr=1e-4,
+        weight_path='tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt',
+    )
 
     trainer = pl.Trainer(max_epochs=max_epochs, accelerator='auto', fast_dev_run=fast_dev_run)
     trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
