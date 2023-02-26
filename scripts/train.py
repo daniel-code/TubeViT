@@ -47,9 +47,9 @@ class ResizedVideo:
 
 
 class MyUCF101(UCF101):
-    def __init__(self, frame_transform: Optional[Callable] = None, *args, **kwargs) -> None:
+    def __init__(self, transform: Optional[Callable] = None, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.frame_transform = frame_transform
+        self.transform = transform
 
     def __getitem__(self, idx: int) -> Tuple[Tensor, int]:
         video, audio, info, video_idx = self.video_clips.get_clip(idx)
