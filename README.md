@@ -13,7 +13,7 @@ in "[Rethinking Video ViTs: Sparse Video Tubes for Joint Image and Video Learnin
     - [ ] config of tubes
 - [ ] pipeline
     - [x] training
-    - [ ] evaluating
+    - [x] evaluating
     - [ ] inference
 
 # Model Architecture
