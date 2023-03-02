@@ -1,6 +1,6 @@
 import math
 from functools import partial
-from typing import Callable
+from typing import Callable, Any
 from typing import List, Union
 
 import numpy as np
@@ -298,3 +298,10 @@ class TubeViTLightningModule(pl.LightningModule):
             return [optimizer], [lr_scheduler]
         else:
             return optimizer
+
+    def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
+        x, y = batch
+        y_hat = self(x)
+        y_pred = torch.softmax(y_hat, dim=-1)
+
+        return {'y': y, 'y_pred': torch.argmax(y_pred, dim=-1), 'y_prob': y_pred}
