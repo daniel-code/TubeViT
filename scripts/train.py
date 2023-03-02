@@ -120,7 +120,7 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
     model = TubeViTLightningModule(
         num_classes=num_classes,
         video_shape=x.shape[1:],
-        num_layers=4,
+        num_layers=12,
         num_heads=12,
         hidden_dim=768,
         mlp_dim=3072,
