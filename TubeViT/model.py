@@ -1,6 +1,6 @@
 import math
 from functools import partial
-from typing import Callable
+from typing import Callable, Any
 from typing import List, Union
 
 import numpy as np
@@ -227,7 +227,9 @@ class TubeViTLightningModule(pl.LightningModule):
                  hidden_dim,
                  mlp_dim,
                  weight_path: str = None,
+                 max_epochs: int = None,
                  **kwargs):
+        self.save_hyperparameters()
         super().__init__()
         self.num_classes = num_classes
         self.model = TubeViT(
@@ -249,6 +251,7 @@ class TubeViTLightningModule(pl.LightningModule):
 
         if weight_path is not None:
             self.model.load_state_dict(torch.load(weight_path), strict=False)
+        self.max_epochs = max_epochs
 
     def forward(self, x):
         return self.model(x)
@@ -283,6 +286,22 @@ class TubeViTLightningModule(pl.LightningModule):
 
         return loss
 
+    def training_epoch_end(self, outputs) -> None:
+        self.log('lr', self.optimizers().optimizer.param_groups[0]['lr'], on_step=False, on_epoch=True)
+
     def configure_optimizers(self):
         optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
-        return optimizer
+        if self.max_epochs is not None:
+            lr_scheduler = optim.lr_scheduler.OneCycleLR(optimizer=optimizer,
+                                                         max_lr=self.lr,
+                                                         total_steps=self.max_epochs)
+            return [optimizer], [lr_scheduler]
+        else:
+            return optimizer
+
+    def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
+        x, y = batch
+        y_hat = self(x)
+        y_pred = torch.softmax(y_hat, dim=-1)
+
+        return {'y': y, 'y_pred': torch.argmax(y_pred, dim=-1), 'y_prob': y_pred}

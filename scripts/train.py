@@ -1,66 +1,17 @@
 import os
 import pickle
-from typing import Tuple, Optional, Callable
 
 import click
 import matplotlib.pyplot as plt
 import pytorch_lightning as pl
-import torch
-from torch import Tensor
 from torch.utils.data import DataLoader, RandomSampler
-from torchvision.datasets import UCF101
 from torchvision.transforms import transforms as T
-from torchvision.transforms._functional_video import resize
 from torchvision.transforms._transforms_video import RandomResizedCropVideo, RandomHorizontalFlipVideo, ToTensorVideo, \
     NormalizeVideo
 
+from TubeViT.dataset import MyUCF101
 from TubeViT.model import TubeViTLightningModule
-
-
-class ResizedVideo:
-    def __init__(
-        self,
-        size,
-        interpolation_mode="bilinear",
-    ):
-        if isinstance(size, tuple):
-            assert len(size) == 2, "size should be tuple (height, width)"
-            self.size = size
-        else:
-            self.size = (size, size)
-
-        self.interpolation_mode = interpolation_mode
-
-    def __call__(self, clip: torch.Tensor):
-        """
-        Args:
-            clip (torch.tensor): Video clip to be cropped. Size is (C, T, H, W)
-        Returns:
-            torch.tensor: resized video clip.
-                size is (C, T, H, W)
-        """
-        return resize(clip, self.size, self.interpolation_mode)
-
-    def __repr__(self):
-        return self.__class__.__name__ + \
-            '(size={0}, interpolation_mode={1})'.format(
-                self.size, self.interpolation_mode
-            )
-
-
-class MyUCF101(UCF101):
-    def __init__(self, transform: Optional[Callable] = None, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.transform = transform
-
-    def __getitem__(self, idx: int) -> Tuple[Tensor, int]:
-        video, audio, info, video_idx = self.video_clips.get_clip(idx)
-        label = self.samples[self.indices[video_idx]][1]
-
-        if self.transform is not None:
-            video = self.transform(video)
-
-        return video, label
+from TubeViT.video_transforms import ResizedVideo
 
 
 @click.command()
@@ -70,7 +21,7 @@ class MyUCF101(UCF101):
 @click.option('-b', '--batch-size', type=int, default=32, help='batch size.')
 @click.option('-f', '--frames-per-clip', type=int, default=32, help='frame per clip.')
 @click.option('-v', '--video-size', type=click.Tuple([int, int]), default=(224, 224), help='frame per clip.')
-@click.option('--max-epochs', type=int, default=5, help='max epochs.')
+@click.option('--max-epochs', type=int, default=10, help='max epochs.')
 @click.option('--num-workers', type=int, default=0)
 @click.option('--fast-dev-run', type=bool, is_flag=True, show_default=True, default=False)
 @click.option('--seed', type=int, default=42, help='random seed.')
@@ -79,17 +30,20 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
          fast_dev_run, seed, preview_video):
     pl.seed_everything(seed)
 
+    imagenet_mean = [0.485, 0.456, 0.406]
+    imagenet_std = [0.229, 0.224, 0.225]
+
     train_transform = T.Compose([
         ToTensorVideo(),
         RandomHorizontalFlipVideo(),
         RandomResizedCropVideo(size=video_size),
-        NormalizeVideo(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], inplace=True)
+        NormalizeVideo(mean=imagenet_mean, std=imagenet_std, inplace=True)
     ])
 
     test_transform = T.Compose([
         ToTensorVideo(),
         ResizedVideo(size=video_size),
-        NormalizeVideo(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], inplace=True)
+        NormalizeVideo(mean=imagenet_mean, std=imagenet_std, inplace=True)
     ])
 
     train_metadata_file = 'ucf101-train-meta.pickle'
@@ -169,15 +123,23 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
     model = TubeViTLightningModule(
         num_classes=num_classes,
         video_shape=x.shape[1:],
-        num_layers=4,
+        num_layers=12,
         num_heads=12,
         hidden_dim=768,
         mlp_dim=3072,
         lr=1e-4,
         weight_path='tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt',
+        max_epochs=max_epochs,
     )
 
-    trainer = pl.Trainer(max_epochs=max_epochs, accelerator='auto', fast_dev_run=fast_dev_run)
+    callbacks = [pl.callbacks.LearningRateMonitor(logging_interval='epoch')]
+
+    trainer = pl.Trainer(
+        max_epochs=max_epochs,
+        accelerator='auto',
+        fast_dev_run=fast_dev_run,
+        callbacks=callbacks,
+    )
     trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
     trainer.save_checkpoint('./models/tubevit_ucf101.ckpt')
 
