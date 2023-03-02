@@ -30,17 +30,20 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
          fast_dev_run, seed, preview_video):
     pl.seed_everything(seed)
 
+    imagenet_mean = [0.485, 0.456, 0.406]
+    imagenet_std = [0.229, 0.224, 0.225]
+
     train_transform = T.Compose([
         ToTensorVideo(),
         RandomHorizontalFlipVideo(),
         RandomResizedCropVideo(size=video_size),
-        NormalizeVideo(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], inplace=True)
+        NormalizeVideo(mean=imagenet_mean, std=imagenet_std, inplace=True)
     ])
 
     test_transform = T.Compose([
         ToTensorVideo(),
         ResizedVideo(size=video_size),
-        NormalizeVideo(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], inplace=True)
+        NormalizeVideo(mean=imagenet_mean, std=imagenet_std, inplace=True)
     ])
 
     train_metadata_file = 'ucf101-train-meta.pickle'
