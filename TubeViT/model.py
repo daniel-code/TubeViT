@@ -229,6 +229,7 @@ class TubeViTLightningModule(pl.LightningModule):
                  weight_path: str = None,
                  max_epochs: int = None,
                  **kwargs):
+        self.save_hyperparameters()
         super().__init__()
         self.num_classes = num_classes
         self.model = TubeViT(
