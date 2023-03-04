@@ -226,8 +226,11 @@ class TubeViTLightningModule(pl.LightningModule):
                  num_heads,
                  hidden_dim,
                  mlp_dim,
+                 lr: float = 3e-4,
+                 weight_decay: float = 0,
                  weight_path: str = None,
                  max_epochs: int = None,
+                 label_smoothing: float = 0.0,
                  **kwargs):
         self.save_hyperparameters()
         super().__init__()
@@ -241,17 +244,14 @@ class TubeViTLightningModule(pl.LightningModule):
             mlp_dim=mlp_dim,
         )
 
-        if 'lr' in kwargs:
-            self.lr = kwargs['lr']
-        else:
-            self.lr = 1e-6
-
-        self.loss_func = nn.CrossEntropyLoss(label_smoothing=0.1)
+        self.lr = lr
+        self.loss_func = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
         self.example_input_array = Tensor(1, *video_shape)
 
         if weight_path is not None:
             self.model.load_state_dict(torch.load(weight_path), strict=False)
         self.max_epochs = max_epochs
+        self.weight_decay = weight_decay
 
     def forward(self, x):
         return self.model(x)
