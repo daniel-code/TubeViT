@@ -290,7 +290,7 @@ class TubeViTLightningModule(pl.LightningModule):
         self.log('lr', self.optimizers().optimizer.param_groups[0]['lr'], on_step=False, on_epoch=True)
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
+        optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         if self.max_epochs is not None:
             lr_scheduler = optim.lr_scheduler.OneCycleLR(optimizer=optimizer,
                                                          max_lr=self.lr,
