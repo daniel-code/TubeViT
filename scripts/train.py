@@ -4,14 +4,13 @@ import pickle
 import click
 import matplotlib.pyplot as plt
 import pytorch_lightning as pl
+from pytorchvideo.transforms import Permute, RandAugment, Normalize
 from torch.utils.data import DataLoader, RandomSampler
 from torchvision.transforms import transforms as T
-from torchvision.transforms._transforms_video import RandomResizedCropVideo, RandomHorizontalFlipVideo, ToTensorVideo, \
-    NormalizeVideo
+from torchvision.transforms._transforms_video import ToTensorVideo
 
 from TubeViT.dataset import MyUCF101
 from TubeViT.model import TubeViTLightningModule
-from TubeViT.video_transforms import ResizedVideo
 
 
 @click.command()
@@ -34,16 +33,18 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
     imagenet_std = [0.229, 0.224, 0.225]
 
     train_transform = T.Compose([
-        ToTensorVideo(),
-        RandomHorizontalFlipVideo(),
-        RandomResizedCropVideo(size=video_size),
-        NormalizeVideo(mean=imagenet_mean, std=imagenet_std, inplace=True)
+        ToTensorVideo(),  # C, T, H, W
+        Permute(dims=[1, 0, 2, 3]),  # T, C, H, W
+        RandAugment(magnitude=10, num_layers=2),
+        Permute(dims=[1, 0, 2, 3]),  # C, T, H, W
+        T.Resize(size=video_size),
+        Normalize(mean=imagenet_mean, std=imagenet_std),
     ])
 
     test_transform = T.Compose([
         ToTensorVideo(),
-        ResizedVideo(size=video_size),
-        NormalizeVideo(mean=imagenet_mean, std=imagenet_std, inplace=True)
+        T.Resize(size=video_size),
+        Normalize(mean=imagenet_mean, std=imagenet_std),
     ])
 
     train_metadata_file = 'ucf101-train-meta.pickle'
