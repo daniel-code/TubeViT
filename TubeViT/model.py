@@ -188,7 +188,7 @@ class TubeViT(nn.Module):
 
     def _generate_position_embedding(self) -> torch.nn.Parameter:
         def _position_embedding_code(t, x, y, j, tau=10_000) -> Tensor:
-            w = 1 / (tau**j)
+            w = 1 / (tau ** j)
             p_jt = math.sin(t * w), math.cos(t * w)
             p_jx = math.sin(x * w), math.cos(x * w)
             p_jy = math.sin(y * w), math.cos(y * w)
