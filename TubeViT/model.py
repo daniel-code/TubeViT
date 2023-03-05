@@ -215,6 +215,8 @@ class TubeViTLightningModule(pl.LightningModule):
                  weight_path: str = None,
                  max_epochs: int = None,
                  label_smoothing: float = 0.0,
+                 dropout: float = 0.0,
+                 attention_dropout: float = 0.0,
                  **kwargs):
         self.save_hyperparameters()
         super().__init__()
@@ -226,6 +228,8 @@ class TubeViTLightningModule(pl.LightningModule):
             num_heads=num_heads,
             hidden_dim=hidden_dim,
             mlp_dim=mlp_dim,
+            dropout=dropout,
+            attention_dropout=attention_dropout,
         )
 
         self.lr = lr
