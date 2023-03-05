@@ -129,6 +129,7 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         hidden_dim=768,
         mlp_dim=3072,
         lr=1e-4,
+        weight_decay=0.001,
         weight_path='tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt',
         max_epochs=max_epochs,
     )
