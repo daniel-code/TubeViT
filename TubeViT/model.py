@@ -1,4 +1,3 @@
-import math
 from functools import partial
 from typing import Callable, Any
 from typing import List, Union
@@ -11,6 +10,8 @@ from torch.nn import functional as F
 from torchmetrics.functional import accuracy, f1_score
 from torchvision.models.vision_transformer import EncoderBlock
 from typing_extensions import OrderedDict
+
+from TubeViT.positional_encoding import get_3d_sincos_pos_embed
 
 
 class Encoder(nn.Module):
@@ -131,6 +132,7 @@ class TubeViT(nn.Module):
                                                            self.offsets)
 
         self.pos_embedding = self._generate_position_embedding()
+        self.pos_embedding = torch.nn.Parameter(self.pos_embedding, requires_grad=False)
         self.register_parameter('pos_embedding', self.pos_embedding)
 
         # Add a class token
@@ -179,42 +181,24 @@ class TubeViT(nn.Module):
         kernel_size = np.array(kernel_size)
         stride = np.array(stride)
         offset = np.array(offset)
-
         output = np.ceil((self.video_shape[[1, 2, 3]] - offset - kernel_size + 1) / stride).astype(int)
-        output = np.concatenate([np.array([self.hidden_dim / 6]),
-                                 output]).astype(int)  # 6 elements (a sine and cosine value for each x; y; t)
-
         return output
 
     def _generate_position_embedding(self) -> torch.nn.Parameter:
-        def _position_embedding_code(t, x, y, j, tau=10_000) -> Tensor:
-            w = 1 / (tau**j)
-            p_jt = math.sin(t * w), math.cos(t * w)
-            p_jx = math.sin(x * w), math.cos(x * w)
-            p_jy = math.sin(y * w), math.cos(y * w)
-            return Tensor([*p_jt, *p_jx, *p_jy])
-
-        position_embedding = [torch.zeros(self.hidden_dim, 1)]
+        position_embedding = [torch.zeros(1, self.hidden_dim)]
 
         for i in range(len(self.kernel_sizes)):
             tube_shape = self._calc_conv_shape(self.kernel_sizes[i], self.strides[i], self.offsets[i])
-            tmp = torch.zeros([self.hidden_dim, *tube_shape[1:]])
-            for j in range(tube_shape[0]):
-                for t in range(tube_shape[1]):
-                    for x in range(tube_shape[2]):
-                        for w in range(tube_shape[3]):
-                            tmp[6 * j:6 * (j + 1), t, x, w] = _position_embedding_code(
-                                t=t * self.strides[i][0] + self.offsets[i][0] + self.kernel_sizes[i][0] // 2,
-                                x=x * self.strides[i][1] + self.offsets[i][1] + self.kernel_sizes[i][1] // 2,
-                                y=w * self.strides[i][2] + self.offsets[i][2] + self.kernel_sizes[i][2] // 2,
-                                j=j,
-                            )
-            tmp = tmp.reshape((self.hidden_dim, -1))
-            position_embedding.append(tmp)
+            pos_embed = get_3d_sincos_pos_embed(
+                embed_dim=self.hidden_dim,
+                tube_shape=tube_shape,
+                kernel_size=self.kernel_sizes[i],
+                stride=self.strides[i],
+                offset=self.offsets[i],
+            )
+            position_embedding.append(pos_embed)
 
-        position_embedding = torch.cat(position_embedding, dim=-1)
-        position_embedding = position_embedding.permute(1, 0).contiguous()
-        position_embedding = torch.nn.Parameter(position_embedding, requires_grad=False)
+        position_embedding = torch.cat(position_embedding, dim=0).contiguous()
         return position_embedding
 
 
@@ -226,8 +210,13 @@ class TubeViTLightningModule(pl.LightningModule):
                  num_heads,
                  hidden_dim,
                  mlp_dim,
+                 lr: float = 3e-4,
+                 weight_decay: float = 0,
                  weight_path: str = None,
                  max_epochs: int = None,
+                 label_smoothing: float = 0.0,
+                 dropout: float = 0.0,
+                 attention_dropout: float = 0.0,
                  **kwargs):
         self.save_hyperparameters()
         super().__init__()
@@ -239,19 +228,18 @@ class TubeViTLightningModule(pl.LightningModule):
             num_heads=num_heads,
             hidden_dim=hidden_dim,
             mlp_dim=mlp_dim,
+            dropout=dropout,
+            attention_dropout=attention_dropout,
         )
 
-        if 'lr' in kwargs:
-            self.lr = kwargs['lr']
-        else:
-            self.lr = 1e-6
-
-        self.loss_func = nn.CrossEntropyLoss(label_smoothing=0.1)
+        self.lr = lr
+        self.loss_func = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
         self.example_input_array = Tensor(1, *video_shape)
 
         if weight_path is not None:
             self.model.load_state_dict(torch.load(weight_path), strict=False)
         self.max_epochs = max_epochs
+        self.weight_decay = weight_decay
 
     def forward(self, x):
         return self.model(x)
@@ -290,7 +278,7 @@ class TubeViTLightningModule(pl.LightningModule):
         self.log('lr', self.optimizers().optimizer.param_groups[0]['lr'], on_step=False, on_epoch=True)
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
+        optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         if self.max_epochs is not None:
             lr_scheduler = optim.lr_scheduler.OneCycleLR(optimizer=optimizer,
                                                          max_lr=self.lr,

@@ -4,16 +4,16 @@ import pickle
 import click
 import matplotlib.pyplot as plt
 import pytorch_lightning as pl
-import torch
-from torch.utils.data import DataLoader, RandomSampler
-from torchvision.transforms import transforms as T
-from torchvision.transforms._transforms_video import ToTensorVideo, NormalizeVideo
-from torchmetrics.functional import confusion_matrix, accuracy, auroc, f1_score
 import seaborn as sns
+import torch
+from pytorchvideo.transforms import Normalize
+from torch.utils.data import DataLoader, RandomSampler
+from torchmetrics.functional import confusion_matrix, accuracy, auroc, f1_score
+from torchvision.transforms import transforms as T
+from torchvision.transforms._transforms_video import ToTensorVideo
 
 from TubeViT.dataset import MyUCF101
 from TubeViT.model import TubeViTLightningModule
-from TubeViT.video_transforms import ResizedVideo
 
 
 @click.command()
@@ -38,8 +38,8 @@ def main(dataset_root, model_path, annotation_path, label_path, num_classes, bat
 
     test_transform = T.Compose([
         ToTensorVideo(),
-        ResizedVideo(size=video_size),
-        NormalizeVideo(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], inplace=True)
+        T.Resize(size=video_size),
+        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
     val_metadata_file = 'ucf101-val-meta.pickle'

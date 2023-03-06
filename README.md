@@ -18,6 +18,11 @@ in "[Rethinking Video ViTs: Sparse Video Tubes for Joint Image and Video Learnin
 
 # Model Architecture
 
-![](assets/fig1.png)
-![](assets/fig2.png)
-![](assets/fig3.png)
+![fig1.png](assets/fig1.png)
+![fig2.png](assets/fig2.png)
+![fig3.png](assets/fig3.png)
+
+# Positional embedding
+
+![Position_Embedding.png](assets/Position_Embedding.png)
+

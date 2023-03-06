@@ -133,3 +133,9 @@ dmypy.json
 
 # ignore model weight
 *.pt
+
+# pytorch lightning log
+lightning_logs
+
+# pycharm
+.idea

@@ -4,14 +4,13 @@ import pickle
 import click
 import matplotlib.pyplot as plt
 import pytorch_lightning as pl
+from pytorchvideo.transforms import Permute, RandAugment, Normalize
 from torch.utils.data import DataLoader, RandomSampler
 from torchvision.transforms import transforms as T
-from torchvision.transforms._transforms_video import RandomResizedCropVideo, RandomHorizontalFlipVideo, ToTensorVideo, \
-    NormalizeVideo
+from torchvision.transforms._transforms_video import ToTensorVideo
 
 from TubeViT.dataset import MyUCF101
 from TubeViT.model import TubeViTLightningModule
-from TubeViT.video_transforms import ResizedVideo
 
 
 @click.command()
@@ -34,16 +33,18 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
     imagenet_std = [0.229, 0.224, 0.225]
 
     train_transform = T.Compose([
-        ToTensorVideo(),
-        RandomHorizontalFlipVideo(),
-        RandomResizedCropVideo(size=video_size),
-        NormalizeVideo(mean=imagenet_mean, std=imagenet_std, inplace=True)
+        ToTensorVideo(),  # C, T, H, W
+        Permute(dims=[1, 0, 2, 3]),  # T, C, H, W
+        RandAugment(magnitude=10, num_layers=2),
+        Permute(dims=[1, 0, 2, 3]),  # C, T, H, W
+        T.Resize(size=video_size),
+        Normalize(mean=imagenet_mean, std=imagenet_std),
     ])
 
     test_transform = T.Compose([
         ToTensorVideo(),
-        ResizedVideo(size=video_size),
-        NormalizeVideo(mean=imagenet_mean, std=imagenet_std, inplace=True)
+        T.Resize(size=video_size),
+        Normalize(mean=imagenet_mean, std=imagenet_std),
     ])
 
     train_metadata_file = 'ucf101-train-meta.pickle'
@@ -94,6 +95,7 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         shuffle=False,
         drop_last=True,
         sampler=train_sampler,
+        pin_memory=True,
     )
 
     val_sampler = RandomSampler(val_set, num_samples=len(val_set) // 10)
@@ -104,6 +106,7 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         shuffle=False,
         drop_last=True,
         sampler=val_sampler,
+        pin_memory=True,
     )
 
     x, y = next(iter(train_dataloader))
@@ -128,6 +131,7 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         hidden_dim=768,
         mlp_dim=3072,
         lr=1e-4,
+        weight_decay=0.001,
         weight_path='tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt',
         max_epochs=max_epochs,
     )
