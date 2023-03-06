@@ -95,6 +95,7 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         shuffle=False,
         drop_last=True,
         sampler=train_sampler,
+        pin_memory=True,
     )
 
     val_sampler = RandomSampler(val_set, num_samples=len(val_set) // 10)
@@ -105,6 +106,7 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         shuffle=False,
         drop_last=True,
         sampler=val_sampler,
+        pin_memory=True,
     )
 
     x, y = next(iter(train_dataloader))
