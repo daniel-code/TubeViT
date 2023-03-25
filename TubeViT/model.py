@@ -91,6 +91,36 @@ class SparseTubesTokenizer(nn.Module):
         return x
 
 
+class SelfAttentionPooling(nn.Module):
+    """
+    Implementation of SelfAttentionPooling
+    Original Paper: Self-Attention Encoding and Pooling for Speaker Recognition
+    https://arxiv.org/pdf/2008.01077v1.pdf
+
+    code from https://gist.github.com/pohanchi/c77f6dbfbcbc21c5215acde4f62e4362
+    """
+    def __init__(self, input_dim):
+        super(SelfAttentionPooling, self).__init__()
+        self.W = nn.Linear(input_dim, 1)
+
+    def forward(self, x):
+        """
+        input:
+            batch_rep : size (N, T, H), N: batch size, T: sequence length, H: Hidden dimension
+
+        attention_weight:
+            att_w : size (N, T, 1)
+
+        return:
+            utter_rep: size (N, H)
+        """
+
+        # (N, T, H) -> (N, T) -> (N, T, 1)
+        att_w = nn.functional.softmax(self.W(x).squeeze(dim=-1), dim=-1).unsqueeze(dim=-1)
+        x = torch.sum(x * att_w, dim=1)
+        return x
+
+
 class TubeViT(nn.Module):
     def __init__(
         self,
@@ -148,6 +178,8 @@ class TubeViT(nn.Module):
             attention_dropout=attention_dropout,
         )
 
+        self.attention_pooling = SelfAttentionPooling(self.hidden_dim)
+
         heads_layers: OrderedDict[str, nn.Module] = OrderedDict()
         if representation_size is None:
             heads_layers["head"] = nn.Linear(self.hidden_dim, self.num_classes)
@@ -170,8 +202,8 @@ class TubeViT(nn.Module):
 
         x = self.encoder(x)
 
-        # Classifier "token" as used by standard language architectures
-        x = x[:, 0]
+        # Attention pooling
+        x = self.attention_pooling(x)
 
         x = self.heads(x)
 
