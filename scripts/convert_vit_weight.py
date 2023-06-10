@@ -5,7 +5,7 @@ from torch import Tensor
 from torch.nn import functional as F
 from torchvision.models import ViT_B_16_Weights
 
-from TubeViT.model import TubeViT
+from tubevit.model import TubeViT
 
 
 @click.command()

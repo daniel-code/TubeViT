@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, RandomSampler
 from torchvision.transforms import transforms as T
 from torchvision.transforms._transforms_video import ToTensorVideo
 
-from TubeViT.dataset import MyUCF101
+from tubevit.dataset import MyUCF101
 
 
 @click.command()

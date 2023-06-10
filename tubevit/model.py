@@ -11,7 +11,7 @@ from torchmetrics.functional import accuracy, f1_score
 from torchvision.models.vision_transformer import EncoderBlock
 from typing_extensions import OrderedDict
 
-from TubeViT.positional_encoding import get_3d_sincos_pos_embed
+from tubevit.positional_encoding import get_3d_sincos_pos_embed
 
 
 class Encoder(nn.Module):
