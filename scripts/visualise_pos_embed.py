@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import torch
 
-from TubeViT.positional_encoding import get_3d_sincos_pos_embed
+from tubevit.positional_encoding import get_3d_sincos_pos_embed
 
 if __name__ == '__main__':
     kernel_sizes = (
