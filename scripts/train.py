@@ -4,7 +4,7 @@ import pickle
 import click
 import matplotlib.pyplot as plt
 import pytorch_lightning as pl
-from pytorchvideo.transforms import Permute, RandAugment, Normalize
+from pytorchvideo.transforms import Normalize, Permute, RandAugment
 from torch.utils.data import DataLoader, RandomSampler
 from torchvision.transforms import transforms as T
 from torchvision.transforms._transforms_video import ToTensorVideo
@@ -14,43 +14,58 @@ from tubevit.model import TubeViTLightningModule
 
 
 @click.command()
-@click.option('-r', '--dataset-root', type=click.Path(exists=True), required=True, help='path to dataset.')
-@click.option('-a', '--annotation-path', type=click.Path(exists=True), required=True, help='path to dataset.')
-@click.option('-nc', '--num-classes', type=int, default=101, help='num of classes of dataset.')
-@click.option('-b', '--batch-size', type=int, default=32, help='batch size.')
-@click.option('-f', '--frames-per-clip', type=int, default=32, help='frame per clip.')
-@click.option('-v', '--video-size', type=click.Tuple([int, int]), default=(224, 224), help='frame per clip.')
-@click.option('--max-epochs', type=int, default=10, help='max epochs.')
-@click.option('--num-workers', type=int, default=0)
-@click.option('--fast-dev-run', type=bool, is_flag=True, show_default=True, default=False)
-@click.option('--seed', type=int, default=42, help='random seed.')
-@click.option('--preview-video', type=bool, is_flag=True, show_default=True, default=False, help='Show input video')
-def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip, video_size, max_epochs, num_workers,
-         fast_dev_run, seed, preview_video):
+@click.option("-r", "--dataset-root", type=click.Path(exists=True), required=True, help="path to dataset.")
+@click.option("-a", "--annotation-path", type=click.Path(exists=True), required=True, help="path to dataset.")
+@click.option("-nc", "--num-classes", type=int, default=101, help="num of classes of dataset.")
+@click.option("-b", "--batch-size", type=int, default=32, help="batch size.")
+@click.option("-f", "--frames-per-clip", type=int, default=32, help="frame per clip.")
+@click.option("-v", "--video-size", type=click.Tuple([int, int]), default=(224, 224), help="frame per clip.")
+@click.option("--max-epochs", type=int, default=10, help="max epochs.")
+@click.option("--num-workers", type=int, default=0)
+@click.option("--fast-dev-run", type=bool, is_flag=True, show_default=True, default=False)
+@click.option("--seed", type=int, default=42, help="random seed.")
+@click.option("--preview-video", type=bool, is_flag=True, show_default=True, default=False, help="Show input video")
+def main(
+    dataset_root,
+    annotation_path,
+    num_classes,
+    batch_size,
+    frames_per_clip,
+    video_size,
+    max_epochs,
+    num_workers,
+    fast_dev_run,
+    seed,
+    preview_video,
+):
     pl.seed_everything(seed)
 
     imagenet_mean = [0.485, 0.456, 0.406]
     imagenet_std = [0.229, 0.224, 0.225]
 
-    train_transform = T.Compose([
-        ToTensorVideo(),  # C, T, H, W
-        Permute(dims=[1, 0, 2, 3]),  # T, C, H, W
-        RandAugment(magnitude=10, num_layers=2),
-        Permute(dims=[1, 0, 2, 3]),  # C, T, H, W
-        T.Resize(size=video_size),
-        Normalize(mean=imagenet_mean, std=imagenet_std),
-    ])
+    train_transform = T.Compose(
+        [
+            ToTensorVideo(),  # C, T, H, W
+            Permute(dims=[1, 0, 2, 3]),  # T, C, H, W
+            RandAugment(magnitude=10, num_layers=2),
+            Permute(dims=[1, 0, 2, 3]),  # C, T, H, W
+            T.Resize(size=video_size),
+            Normalize(mean=imagenet_mean, std=imagenet_std),
+        ]
+    )
 
-    test_transform = T.Compose([
-        ToTensorVideo(),
-        T.Resize(size=video_size),
-        Normalize(mean=imagenet_mean, std=imagenet_std),
-    ])
+    test_transform = T.Compose(
+        [
+            ToTensorVideo(),
+            T.Resize(size=video_size),
+            Normalize(mean=imagenet_mean, std=imagenet_std),
+        ]
+    )
 
-    train_metadata_file = 'ucf101-train-meta.pickle'
+    train_metadata_file = "ucf101-train-meta.pickle"
     train_precomputed_metadata = None
     if os.path.exists(train_metadata_file):
-        with open(train_metadata_file, 'rb') as f:
+        with open(train_metadata_file, "rb") as f:
             train_precomputed_metadata = pickle.load(f)
 
     train_set = MyUCF101(
@@ -59,18 +74,18 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         _precomputed_metadata=train_precomputed_metadata,
         frames_per_clip=frames_per_clip,
         train=True,
-        output_format='THWC',
+        output_format="THWC",
         transform=train_transform,
     )
 
     if not os.path.exists(train_metadata_file):
-        with open(train_metadata_file, 'wb') as f:
+        with open(train_metadata_file, "wb") as f:
             pickle.dump(train_set.metadata, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    val_metadata_file = 'ucf101-val-meta.pickle'
+    val_metadata_file = "ucf101-val-meta.pickle"
     val_precomputed_metadata = None
     if os.path.exists(val_metadata_file):
-        with open(val_metadata_file, 'rb') as f:
+        with open(val_metadata_file, "rb") as f:
             val_precomputed_metadata = pickle.load(f)
 
     val_set = MyUCF101(
@@ -79,12 +94,12 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         _precomputed_metadata=val_precomputed_metadata,
         frames_per_clip=frames_per_clip,
         train=False,
-        output_format='THWC',
+        output_format="THWC",
         transform=test_transform,
     )
 
     if not os.path.exists(val_metadata_file):
-        with open(val_metadata_file, 'wb') as f:
+        with open(val_metadata_file, "wb") as f:
             pickle.dump(val_set.metadata, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     train_sampler = RandomSampler(train_set, num_samples=len(train_set) // 10)
@@ -132,21 +147,21 @@ def main(dataset_root, annotation_path, num_classes, batch_size, frames_per_clip
         mlp_dim=3072,
         lr=1e-4,
         weight_decay=0.001,
-        weight_path='tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt',
+        weight_path="tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt",
         max_epochs=max_epochs,
     )
 
-    callbacks = [pl.callbacks.LearningRateMonitor(logging_interval='epoch')]
+    callbacks = [pl.callbacks.LearningRateMonitor(logging_interval="epoch")]
 
     trainer = pl.Trainer(
         max_epochs=max_epochs,
-        accelerator='auto',
+        accelerator="auto",
         fast_dev_run=fast_dev_run,
         callbacks=callbacks,
     )
     trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
-    trainer.save_checkpoint('./models/tubevit_ucf101.ckpt')
+    trainer.save_checkpoint("./models/tubevit_ucf101.ckpt")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
