@@ -139,3 +139,6 @@ lightning_logs
 
 # pycharm
 .idea
+
+# ignore dataset
+data/

@@ -4,15 +4,13 @@ Convert to pytorch version.
 """
 
 from typing import Tuple
+
 import torch
 
 
-def get_3d_sincos_pos_embed(embed_dim: int,
-                            tube_shape: Tuple[int, int, int],
-                            stride,
-                            offset,
-                            kernel_size,
-                            cls_token: bool = False) -> torch.Tensor:
+def get_3d_sincos_pos_embed(
+    embed_dim: int, tube_shape: Tuple[int, int, int], stride, offset, kernel_size, cls_token: bool = False
+) -> torch.Tensor:
     """
     Get 3D sine-cosine positional embedding.
     Args:
@@ -23,7 +21,8 @@ def get_3d_sincos_pos_embed(embed_dim: int,
         embed_dim:
         cls_token: bool, whether to contain CLS token
     Returns:
-        (torch.Tensor): [t_size*grid_size*grid_size, embed_dim] or [1+t_size*grid_size*grid_size, embed_dim] (w/ or w/o cls_token)
+        (torch.Tensor): [t_size*grid_size*grid_size, embed_dim] or [1+t_size*grid_size*grid_size, embed_dim]
+        (w/ or w/o cls_token)
     """
     assert embed_dim % 4 == 0
     embed_dim_spatial = embed_dim // 3 * 2
@@ -37,7 +36,7 @@ def get_3d_sincos_pos_embed(embed_dim: int,
     grid_w_size = tube_shape[2]
     grid_w = torch.arange(tube_shape[2], dtype=torch.float)
     grid_w = grid_w * stride[2] + offset[2] + kernel_size[2] // 2
-    grid = torch.meshgrid(grid_w, grid_h, indexing='ij')
+    grid = torch.meshgrid(grid_w, grid_h, indexing="ij")
     grid = torch.stack(grid, dim=0)
 
     grid = grid.reshape([2, 1, grid_h_size, grid_w_size])
@@ -73,7 +72,7 @@ def get_2d_sincos_pos_embed(embed_dim: int, grid_size: int, cls_token: bool = Fa
     """
     grid_h = torch.arange(grid_size, dtype=torch.float)
     grid_w = torch.arange(grid_size, dtype=torch.float)
-    grid = torch.meshgrid(grid_w, grid_h, indexing='ij')
+    grid = torch.meshgrid(grid_w, grid_h, indexing="ij")
     grid = torch.stack(grid, dim=0)
 
     grid = grid.reshape([2, 1, grid_size, grid_size])
@@ -113,7 +112,7 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim: int, pos: torch.Tensor) -> torc
     assert embed_dim % 2 == 0
     omega = torch.arange(embed_dim // 2, dtype=torch.float)
     omega /= embed_dim / 2.0
-    omega = 1.0 / 10000 ** omega
+    omega = 1.0 / 10000**omega
 
     pos = pos.reshape(-1)
     out = torch.einsum("m,d->md", pos, omega)
