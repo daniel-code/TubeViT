@@ -2,10 +2,11 @@ import os
 import pickle
 
 import click
+import lightning.pytorch as pl
 import matplotlib.pyplot as plt
-import pytorch_lightning as pl
+from lightning.pytorch.loggers import TensorBoardLogger
 from pytorchvideo.transforms import Normalize, Permute, RandAugment
-from torch.utils.data import DataLoader, RandomSampler
+from torch.utils.data import DataLoader
 from torchvision.transforms import transforms as T
 from torchvision.transforms._transforms_video import ToTensorVideo
 
@@ -102,25 +103,21 @@ def main(
         with open(val_metadata_file, "wb") as f:
             pickle.dump(val_set.metadata, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    train_sampler = RandomSampler(train_set, num_samples=len(train_set) // 10)
     train_dataloader = DataLoader(
         train_set,
         batch_size=batch_size,
         num_workers=num_workers,
-        shuffle=False,
+        shuffle=True,
         drop_last=True,
-        sampler=train_sampler,
         pin_memory=True,
     )
 
-    val_sampler = RandomSampler(val_set, num_samples=len(val_set) // 10)
     val_dataloader = DataLoader(
         val_set,
         batch_size=batch_size,
         num_workers=num_workers,
         shuffle=False,
         drop_last=True,
-        sampler=val_sampler,
         pin_memory=True,
     )
 
@@ -152,11 +149,13 @@ def main(
     )
 
     callbacks = [pl.callbacks.LearningRateMonitor(logging_interval="epoch")]
+    logger = TensorBoardLogger("logs", name="TubeViT")
 
     trainer = pl.Trainer(
         max_epochs=max_epochs,
         accelerator="auto",
         fast_dev_run=fast_dev_run,
+        logger=logger,
         callbacks=callbacks,
     )
     trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
