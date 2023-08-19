@@ -1,8 +1,8 @@
 from functools import partial
 from typing import Any, Callable, List, Union
 
+import lightning.pytorch as pl
 import numpy as np
-import pytorch_lightning as pl
 import torch
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
@@ -311,7 +311,7 @@ class TubeViTLightningModule(pl.LightningModule):
 
         return loss
 
-    def training_epoch_end(self, outputs) -> None:
+    def on_train_epoch_end(self) -> None:
         self.log("lr", self.optimizers().optimizer.param_groups[0]["lr"], on_step=False, on_epoch=True)
 
     def configure_optimizers(self):
