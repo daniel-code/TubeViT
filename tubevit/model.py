@@ -1,11 +1,10 @@
 from functools import partial
-from typing import Callable, Any
-from typing import List, Union
+from typing import Any, Callable, List, Union
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from torch import nn, Tensor, optim
+from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torchmetrics.functional import accuracy, f1_score
 from torchvision.models.vision_transformer import EncoderBlock
@@ -20,15 +19,16 @@ class Encoder(nn.Module):
     Code from torch.
     Move pos_embedding to TubeViT
     """
+
     def __init__(
-            self,
-            num_layers: int,
-            num_heads: int,
-            hidden_dim: int,
-            mlp_dim: int,
-            dropout: float,
-            attention_dropout: float,
-            norm_layer: Callable[..., nn.Module] = partial(nn.LayerNorm, eps=1e-6),
+        self,
+        num_layers: int,
+        num_heads: int,
+        hidden_dim: int,
+        mlp_dim: int,
+        dropout: float,
+        attention_dropout: float,
+        norm_layer: Callable[..., nn.Module] = partial(nn.LayerNorm, eps=1e-6),
     ):
         super().__init__()
         self.dropout = nn.Dropout(dropout)
@@ -58,13 +58,14 @@ class SparseTubesTokenizer(nn.Module):
         self.strides = strides
         self.offsets = offsets
 
-        self.conv_proj_weight = nn.Parameter(torch.empty((self.hidden_dim, 3, *self.kernel_sizes[0])).normal_(),
-                                             requires_grad=True)
+        self.conv_proj_weight = nn.Parameter(
+            torch.empty((self.hidden_dim, 3, *self.kernel_sizes[0])).normal_(), requires_grad=True
+        )
 
-        self.register_parameter('conv_proj_weight', self.conv_proj_weight)
+        self.register_parameter("conv_proj_weight", self.conv_proj_weight)
 
         self.conv_proj_bias = nn.Parameter(torch.zeros(len(self.kernel_sizes), self.hidden_dim), requires_grad=True)
-        self.register_parameter('conv_proj_bias', self.conv_proj_bias)
+        self.register_parameter("conv_proj_bias", self.conv_proj_bias)
 
     def forward(self, x: Tensor) -> Tensor:
         n, c, t, h, w = x.shape  # CTHW
@@ -73,10 +74,10 @@ class SparseTubesTokenizer(nn.Module):
             if i == 0:
                 weight = self.conv_proj_weight
             else:
-                weight = F.interpolate(self.conv_proj_weight, self.kernel_sizes[i], mode='trilinear')
+                weight = F.interpolate(self.conv_proj_weight, self.kernel_sizes[i], mode="trilinear")
 
             tube = F.conv3d(
-                x[:, :, self.offsets[i][0]:, self.offsets[i][1]:, self.offsets[i][2]:],
+                x[:, :, self.offsets[i][0] :, self.offsets[i][1] :, self.offsets[i][2] :],
                 weight,
                 bias=self.conv_proj_bias[i],
                 stride=self.strides[i],
@@ -99,6 +100,7 @@ class SelfAttentionPooling(nn.Module):
 
     code from https://gist.github.com/pohanchi/c77f6dbfbcbc21c5215acde4f62e4362
     """
+
     def __init__(self, input_dim):
         super(SelfAttentionPooling, self).__init__()
         self.W = nn.Linear(input_dim, 1)
@@ -158,16 +160,17 @@ class TubeViT(nn.Module):
             (0, 16, 16),
             (0, 0, 0),
         )
-        self.sparse_tubes_tokenizer = SparseTubesTokenizer(self.hidden_dim, self.kernel_sizes, self.strides,
-                                                           self.offsets)
+        self.sparse_tubes_tokenizer = SparseTubesTokenizer(
+            self.hidden_dim, self.kernel_sizes, self.strides, self.offsets
+        )
 
         self.pos_embedding = self._generate_position_embedding()
         self.pos_embedding = torch.nn.Parameter(self.pos_embedding, requires_grad=False)
-        self.register_parameter('pos_embedding', self.pos_embedding)
+        self.register_parameter("pos_embedding", self.pos_embedding)
 
         # Add a class token
         self.class_token = nn.Parameter(torch.zeros(1, 1, self.hidden_dim), requires_grad=True)
-        self.register_parameter('class_token', self.class_token)
+        self.register_parameter("class_token", self.class_token)
 
         self.encoder = Encoder(
             num_layers=num_layers,
@@ -235,21 +238,23 @@ class TubeViT(nn.Module):
 
 
 class TubeViTLightningModule(pl.LightningModule):
-    def __init__(self,
-                 num_classes,
-                 video_shape,
-                 num_layers,
-                 num_heads,
-                 hidden_dim,
-                 mlp_dim,
-                 lr: float = 3e-4,
-                 weight_decay: float = 0,
-                 weight_path: str = None,
-                 max_epochs: int = None,
-                 label_smoothing: float = 0.0,
-                 dropout: float = 0.0,
-                 attention_dropout: float = 0.0,
-                 **kwargs):
+    def __init__(
+        self,
+        num_classes,
+        video_shape,
+        num_layers,
+        num_heads,
+        hidden_dim,
+        mlp_dim,
+        lr: float = 3e-4,
+        weight_decay: float = 0,
+        weight_path: str = None,
+        max_epochs: int = None,
+        label_smoothing: float = 0.0,
+        dropout: float = 0.0,
+        attention_dropout: float = 0.0,
+        **kwargs,
+    ):
         self.save_hyperparameters()
         super().__init__()
         self.num_classes = num_classes
@@ -285,9 +290,9 @@ class TubeViTLightningModule(pl.LightningModule):
         y_pred = torch.softmax(y_hat, dim=-1)
 
         # Logging to TensorBoard by default
-        self.log('train_loss', loss, prog_bar=True)
-        self.log('train_acc', accuracy(y_pred, y, task='multiclass', num_classes=self.num_classes), prog_bar=True)
-        self.log('train_f1', f1_score(y_pred, y, task='multiclass', num_classes=self.num_classes), prog_bar=True)
+        self.log("train_loss", loss, prog_bar=True)
+        self.log("train_acc", accuracy(y_pred, y, task="multiclass", num_classes=self.num_classes), prog_bar=True)
+        self.log("train_f1", f1_score(y_pred, y, task="multiclass", num_classes=self.num_classes), prog_bar=True)
 
         return loss
 
@@ -300,21 +305,21 @@ class TubeViTLightningModule(pl.LightningModule):
         y_pred = torch.softmax(y_hat, dim=-1)
 
         # Logging to TensorBoard by default
-        self.log('val_loss', loss, prog_bar=True)
-        self.log('val_acc', accuracy(y_pred, y, task='multiclass', num_classes=self.num_classes), prog_bar=True)
-        self.log('val_f1', f1_score(y_pred, y, task='multiclass', num_classes=self.num_classes), prog_bar=True)
+        self.log("val_loss", loss, prog_bar=True)
+        self.log("val_acc", accuracy(y_pred, y, task="multiclass", num_classes=self.num_classes), prog_bar=True)
+        self.log("val_f1", f1_score(y_pred, y, task="multiclass", num_classes=self.num_classes), prog_bar=True)
 
         return loss
 
     def training_epoch_end(self, outputs) -> None:
-        self.log('lr', self.optimizers().optimizer.param_groups[0]['lr'], on_step=False, on_epoch=True)
+        self.log("lr", self.optimizers().optimizer.param_groups[0]["lr"], on_step=False, on_epoch=True)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         if self.max_epochs is not None:
-            lr_scheduler = optim.lr_scheduler.OneCycleLR(optimizer=optimizer,
-                                                         max_lr=self.lr,
-                                                         total_steps=self.max_epochs)
+            lr_scheduler = optim.lr_scheduler.OneCycleLR(
+                optimizer=optimizer, max_lr=self.lr, total_steps=self.max_epochs
+            )
             return [optimizer], [lr_scheduler]
         else:
             return optimizer
@@ -324,4 +329,4 @@ class TubeViTLightningModule(pl.LightningModule):
         y_hat = self(x)
         y_pred = torch.softmax(y_hat, dim=-1)
 
-        return {'y': y, 'y_pred': torch.argmax(y_pred, dim=-1), 'y_prob': y_pred}
+        return {"y": y, "y_pred": torch.argmax(y_pred, dim=-1), "y_prob": y_pred}
