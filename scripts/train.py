@@ -21,7 +21,7 @@ from tubevit.model import TubeViTLightningModule
 @click.option("-b", "--batch-size", type=int, default=32, help="batch size.")
 @click.option("-f", "--frames-per-clip", type=int, default=32, help="frame per clip.")
 @click.option("-v", "--video-size", type=click.Tuple([int, int]), default=(224, 224), help="frame per clip.")
-@click.option("--max-epochs", type=int, default=10, help="max epochs.")
+@click.option("--max-epochs", type=int, default=1, help="max epochs.")
 @click.option("--num-workers", type=int, default=0)
 @click.option("--fast-dev-run", type=bool, is_flag=True, show_default=True, default=False)
 @click.option("--seed", type=int, default=42, help="random seed.")
@@ -159,6 +159,7 @@ def main(
         fast_dev_run=fast_dev_run,
         logger=logger,
         callbacks=callbacks,
+        val_check_interval=0.05,
     )
     trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
     trainer.save_checkpoint("./models/tubevit_ucf101.ckpt")
