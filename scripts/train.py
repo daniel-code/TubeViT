@@ -110,6 +110,7 @@ def main(
         shuffle=True,
         drop_last=True,
         pin_memory=True,
+        persistent_workers=num_workers > 0,
     )
 
     val_dataloader = DataLoader(
@@ -119,6 +120,7 @@ def main(
         shuffle=False,
         drop_last=True,
         pin_memory=True,
+        persistent_workers=num_workers > 0,
     )
 
     x, y = next(iter(train_dataloader))
