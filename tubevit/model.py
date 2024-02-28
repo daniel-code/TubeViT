@@ -142,7 +142,7 @@ class TubeViT(nn.Module):
         self.hidden_dim = hidden_dim
         self.kernel_sizes = (
             (8, 8, 8),
-            (16, 4, 4),
+            (12, 4, 4),
             (4, 12, 12),
             (1, 16, 16),
         )
@@ -151,7 +151,7 @@ class TubeViT(nn.Module):
             (16, 32, 32),
             (6, 32, 32),
             (16, 32, 32),
-            (32, 16, 16),
+            (16, 16, 16),
         )
 
         self.offsets = (
