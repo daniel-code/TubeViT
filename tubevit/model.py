@@ -4,6 +4,7 @@ from typing import Any, Callable, List, Union
 import lightning.pytorch as pl
 import numpy as np
 import torch
+from lightning.pytorch.utilities.types import STEP_OUTPUT
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torchmetrics.functional import accuracy, f1_score
@@ -296,6 +297,21 @@ class TubeViTLightningModule(pl.LightningModule):
 
         return loss
 
+    def on_train_start(self) -> None:
+        tensorboard = self.logger.experiment
+        for name, parameter in self.model.named_parameters():
+            tensorboard.add_histogram(name, parameter, global_step=0)
+
+        # tensorboard.add_graph(self.model, self.example_input_array.to(self.device))
+
+    def on_train_batch_end(self, outputs: STEP_OUTPUT, batch: Any, batch_idx: int) -> None:
+        if batch_idx % getattr(self.trainer, "log_every_n_steps", 50) == 0:
+            tensorboard = self.logger.experiment
+            for name, parameter in self.model.named_parameters():
+                tensorboard.add_histogram(name, parameter, global_step=batch_idx)
+
+            self.log("lr", self.optimizers().optimizer.param_groups[0]["lr"])
+
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
@@ -310,9 +326,6 @@ class TubeViTLightningModule(pl.LightningModule):
         self.log("val_f1", f1_score(y_pred, y, task="multiclass", num_classes=self.num_classes), prog_bar=True)
 
         return loss
-
-    def on_train_epoch_end(self) -> None:
-        self.log("lr", self.optimizers().optimizer.param_groups[0]["lr"], on_step=False, on_epoch=True)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(
