@@ -147,10 +147,10 @@ def main(
         lr=1e-4,
         weight_decay=0.001,
         weight_path="tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt",
-        max_epochs=max_epochs,
+        max_epochs=len(train_dataloader) * max_epochs,
     )
 
-    callbacks = [pl.callbacks.LearningRateMonitor(logging_interval="epoch")]
+    callbacks = [pl.callbacks.LearningRateMonitor(logging_interval="step")]
     logger = TensorBoardLogger("logs", name="TubeViT")
 
     trainer = pl.Trainer(

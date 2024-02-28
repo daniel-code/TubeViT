@@ -340,9 +340,12 @@ class TubeViTLightningModule(pl.LightningModule):
             weight_decay=self.weight_decay,
         )
         if self.max_epochs is not None:
-            lr_scheduler = optim.lr_scheduler.OneCycleLR(
-                optimizer=optimizer, max_lr=self.lr, total_steps=self.max_epochs
-            )
+            lr_scheduler = {
+                "scheduler": optim.lr_scheduler.OneCycleLR(
+                    optimizer=optimizer, max_lr=self.lr, total_steps=self.max_epochs
+                ),
+                "interval": "step",
+            }
             return [optimizer], [lr_scheduler]
         else:
             return optimizer
