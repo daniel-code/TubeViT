@@ -216,7 +216,7 @@ class TubeViT(nn.Module):
         kernel_size = np.array(kernel_size)
         stride = np.array(stride)
         offset = np.array(offset)
-        output = np.ceil((self.video_shape[[1, 2, 3]] - offset - kernel_size + 1) / stride).astype(int)
+        output = np.floor(((self.video_shape[[1, 2, 3]] - offset - kernel_size) / stride) + 1).astype(int)
         return output
 
     def _generate_position_embedding(self) -> torch.nn.Parameter:
