@@ -2,7 +2,7 @@ import os
 import pickle
 
 import click
-import lightning.pytorch as pl
+import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 from lightning.pytorch.loggers import TensorBoardLogger
 from pytorchvideo.transforms import Normalize, Permute, RandAugment

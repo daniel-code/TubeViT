@@ -1,7 +1,7 @@
 from functools import partial
 from typing import Any, Callable, List, Union
 
-import lightning.pytorch as pl
+import pytorch_lightning as pl
 import numpy as np
 import torch
 from lightning.pytorch.utilities.types import STEP_OUTPUT
