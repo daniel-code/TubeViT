@@ -1,131 +1,103 @@
 # TubeViT
 
-An unofficial implementation of TubeViT
-in "[Rethinking Video ViTs: Sparse Video Tubes for Joint Image and Video Learning](https://arxiv.org/abs/2212.03229)"
+An unofficial PyTorch implementation of TubeViT
+from ["Rethinking Video ViTs: Sparse Video Tubes for Joint Image and Video Learning"](https://arxiv.org/abs/2212.03229).
 
-# Spec.
+## Status
 
-- [x] Fixed Positional embedding
-- [ ] Sparse Tube Construction
-    - [x] Multi-Tube
-    - [x] Interpolated Kernels
-    - [ ] Space To Depth
-    - [ ] config of tubes
-- [ ] pipeline
-    - [x] training
-    - [x] evaluating
-    - [ ] inference
+- [x] Fixed 3D sincos positional embedding (computed in physical input-video coordinates)
+- [ ] Sparse tube construction
+    - [x] Multi-tube (4 hard-coded configs: `kernel_sizes`, `strides`, `offsets` in `tubevit/model.py`)
+    - [x] Interpolated kernels (a single learnable 3D conv weight is trilinear-resized per tube at every forward pass)
+    - [ ] Space-to-depth
+    - [ ] Configurable tubes
+- [x] Pipeline
+    - [x] Training
+    - [x] Evaluation
+    - [x] Inference
 
-# Usage
+## Requirements
 
-This project is based on `torch==1.13.1` and [pytorch-lightning](https://github.com/Lightning-AI/lightning)
+- Python ≥ 3.12
+- [`uv`](https://docs.astral.sh/uv/) for dependency management
+- A CUDA-capable GPU is recommended
+
+Built on `torch ≥ 2.11`, `lightning ≥ 2.6` (PyTorch Lightning 2.x), `torchvision`, `pytorchvideo`, `torchmetrics`, and
+`click`. The full dependency graph is pinned in `uv.lock`.
 
 ## Setup
 
-1. Install requirements
-
-    ```commandline
-    pip install -r requirements.txt
-    ```
-
-2. Download UFC101 dataset
-
-## Convert ViT pre-trained weight
-
-Use `convert_vit_weight.py` to convert torch ViT pre-trained weight to TubeVit.
-
-```commandline
-python scripts/convert_vit_weight.py --help                                                                              ✔ 
-Usage: convert_vit_weight.py [OPTIONS]
-
-Options:
-  -nc, --num-classes INTEGER      num of classes of dataset.
-  -f, --frames-per-clip INTEGER   frame per clip.
-  -v, --video-size <INTEGER INTEGER>...
-                                  frame per clip.
-  -o, --output-path PATH          output model weight name.
-  --help                          Show this message and exit.
+```bash
+uv sync
 ```
 
-### Example
+## Usage
 
-Convert ImageNet pre-trained weight to UCF101. `--num-classes` is 101 by default.
+Every entry point is a [click](https://click.palletsprojects.com/) CLI under `scripts/` — run any of them with `--help`
+to see all options.
 
-```commandline
+### 1. Dataset
+
+Download UCF101 and its annotation split. Paths follow the layout expected by [
+`torchvision.datasets.UCF101`](https://pytorch.org/vision/main/generated/torchvision.datasets.UCF101.html).
+
+### 2. Convert a ViT-B/16 checkpoint to TubeViT
+
+Inflates `torchvision.ViT_B_16_Weights.DEFAULT` into a TubeViT-compatible weight file. The 2D patch-embedding kernel is
+bilinearly resized to 8×8, a temporal dim is unsqueezed and repeated 8× (then divided by 8) to seed the tokenizer's 3D
+conv.
+
+```bash
 python scripts/convert_vit_weight.py
+# -> tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt
 ```
 
-## Train
+`scripts/train.py` expects exactly this filename at the repo root.
 
-Current `train.py` only train on pytorch UCF101 dataset.
-Change the dataset if needed.
+### 3. Train
 
-`--dataset-root` and `--annotation-path` is based
-on [torchvision.datasets.UCF101](https://pytorch.org/vision/main/generated/torchvision.datasets.UCF101.html)
-
-```commandline
-python scripts/train.py --help
-
-Usage: train.py [OPTIONS]
-
-Options:
-  -r, --dataset-root PATH         path to dataset.  [required]
-  -a, --annotation-path PATH      path to dataset.  [required]
-  -nc, --num-classes INTEGER      num of classes of dataset.
-  -b, --batch-size INTEGER        batch size.
-  -f, --frames-per-clip INTEGER   frame per clip.
-  -v, --video-size <INTEGER INTEGER>...
-                                  frame per clip.
-  --max-epochs INTEGER            max epochs.
-  --num-workers INTEGER
-  --fast-dev-run
-  --seed INTEGER                  random seed.
-  --preview-video                 Show input video
-  --help                          Show this message and exit.
+```bash
+python scripts/train.py \
+    -r path/to/ucf101 \
+    -a path/to/ucfTrainTestlist
 ```
 
-### Examples
+- TensorBoard logs: `logs/TubeViT/`
+- Checkpoint: `./models/tubevit_ucf101.ckpt`
+- UCF101 clip metadata is cached to `ucf101-{train,val}-meta.pickle` at the repo root on first run. Delete to
+  invalidate.
+- Add `--fast-dev-run` for a one-batch sanity check.
 
-```commandline
-python scripts/train.py -r path/to/dataset -a path/to/annotation
+### 4. Evaluate
+
+```bash
+python scripts/evaluate.py \
+    -r path/to/ucf101 \
+    -a path/to/ucfTrainTestlist \
+    --label-path path/to/classInd.txt \
+    -m path/to/checkpoint.ckpt
 ```
 
-## Evaluation
+Prints accuracy / top-5 / AUROC / F1, and writes a confusion-matrix heatmap to `output.png`.
 
-```commandline
-python scripts/evaluate.py --help
+### 5. Inference on a single video
 
-Usage: evaluate.py [OPTIONS]
-
-Options:
-  -r, --dataset-root PATH         path to dataset.  [required]
-  -m, --model-path PATH           path to model weight.  [required]
-  -a, --annotation-path PATH      path to dataset.  [required]
-  --label-path PATH               path to classInd.txt.  [required]
-  -nc, --num-classes INTEGER      num of classes of dataset.
-  -b, --batch-size INTEGER        batch size.
-  -f, --frames-per-clip INTEGER   frame per clip.
-  -v, --video-size <INTEGER INTEGER>...
-                                  frame per clip.
-  --num-workers INTEGER
-  --seed INTEGER                  random seed.
-  --verbose                       Show input video
-  --help                          Show this message and exit.
+```bash
+python scripts/infernce.py path/to/video.mp4 \
+    --label-path path/to/classInd.txt \
+    -m path/to/checkpoint.ckpt
 ```
 
-### Examples
-
-```commandline
-python scripts/evaluate.py -r path/to/dataset -a path/to/annotation
-```
-
-# Model Architecture
+## Model architecture
 
 ![fig1.png](assets/fig1.png)
 ![fig2.png](assets/fig2.png)
 ![fig3.png](assets/fig3.png)
 
-# Positional embedding
+## Positional embedding
 
 ![Position_Embedding.png](assets/Position_Embedding.png)
 
+## License
+
+MIT — see [LICENSE](LICENSE).
