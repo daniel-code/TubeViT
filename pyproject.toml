@@ -1,3 +1,26 @@
+[project]
+name = "tubevit"
+version = "0.1.0"
+description = 'An unofficial implementation of TubeViT in "Rethinking Video ViTs: Sparse Video Tubes for Joint Image and Video Learning".'
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.3.2",
+    "lightning>=2.6.1",
+    "matplotlib>=3.10.8",
+    "pre-commit>=4.5.1",
+    "pytorchvideo>=0.1.5",
+    "seaborn>=0.13.2",
+    "torch>=2.11.0",
+    "torchmetrics>=1.9.0",
+    "torchvision>=0.26.0",
+]
+
+[tool.uv.build-backend]
+module-name = "tubevit"
+module-root = ""
+
+
 [tool.ruff]
 # Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default.
 select = [
