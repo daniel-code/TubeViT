@@ -24,7 +24,10 @@ def get_3d_sincos_pos_embed(
         (torch.Tensor): [t_size*grid_size*grid_size, embed_dim] or [1+t_size*grid_size*grid_size, embed_dim]
         (w/ or w/o cls_token)
     """
-    assert embed_dim % 4 == 0
+    assert embed_dim % 6 == 0, (
+        f"embed_dim must be divisible by 6 (got {embed_dim}): "
+        "temporal split needs embed_dim//3 to be even, and spatial split needs embed_dim//3*2 divisible by 4"
+    )
     embed_dim_spatial = embed_dim // 3 * 2
     embed_dim_temporal = embed_dim // 3
 
