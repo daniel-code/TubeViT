@@ -1,15 +1,30 @@
+import sys
+
 import click
 import torch
-from pytorchvideo.data.encoded_video import EncodedVideo
-from pytorchvideo.transforms import (
+import torchvision.transforms._functional_tensor as _tv_functional_tensor
+
+# isort: off
+# pytorchvideo 0.1.5 imports torchvision.transforms.functional_tensor, which was
+# made private (_functional_tensor) in torchvision >=0.17. Alias it before any
+# pytorchvideo import so the package loads.
+sys.modules.setdefault("torchvision.transforms.functional_tensor", _tv_functional_tensor)
+
+from pytorchvideo.data.encoded_video import EncodedVideo  # noqa: E402
+from pytorchvideo.transforms import (  # noqa: E402
     ApplyTransformToKey,
     ShortSideScale,
     UniformTemporalSubsample,
 )
-from torchvision.transforms import Compose, Lambda
-from torchvision.transforms._transforms_video import CenterCropVideo, NormalizeVideo
+from torchvision.transforms import Compose, Lambda  # noqa: E402
+from torchvision.transforms._transforms_video import (  # noqa: E402
+    CenterCropVideo,
+    NormalizeVideo,
+)
 
-from tubevit.model import TubeViTLightningModule
+from tubevit.model import TubeViTLightningModule  # noqa: E402
+
+# iosrt: on
 
 
 @click.command()
@@ -59,8 +74,25 @@ def main(
             video_data.append(data["video"])
 
     video_data = torch.stack(video_data)
-    model = TubeViTLightningModule.load_from_checkpoint(model_path)
-    prediction = model.predict_step(batch=(video_data, None), batch_idx=0)
+
+    # Accept either a Lightning .ckpt (from scripts/train.py) or a raw state_dict
+    # .pt (from scripts/convert_vit_weight.py). The latter is the inflated ViT-B
+    # seed — its classifier head is random, so predictions on it are meaningless.
+    if str(model_path).endswith(".ckpt"):
+        model = TubeViTLightningModule.load_from_checkpoint(model_path)
+    else:
+        model = TubeViTLightningModule(
+            num_classes=len(labels),
+            video_shape=(3, frames_per_clip, video_size[0], video_size[1]),
+            num_layers=12,
+            num_heads=12,
+            hidden_dim=768,
+            mlp_dim=3072,
+            weight_path=model_path,
+        )
+    model.eval()
+    with torch.no_grad():
+        prediction = model.predict_step(batch=(video_data, None), batch_idx=0)
     print(video_data.shape)
     print("Predict:", labels[torch.argmax(torch.sum(prediction["y_prob"], dim=0)).to("cpu").item()])
 
