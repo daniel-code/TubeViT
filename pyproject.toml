@@ -26,6 +26,10 @@ dev = [
 ]
 
 
+[build-system]
+requires = ["uv_build>=0.6.0,<0.9"]
+build-backend = "uv_build"
+
 [tool.uv.build-backend]
 module-name = "tubevit"
 module-root = ""
