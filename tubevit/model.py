@@ -58,14 +58,8 @@ class SparseTubesTokenizer(nn.Module):
         self.strides = strides
         self.offsets = offsets
 
-        self.conv_proj_weight = nn.Parameter(
-            torch.empty((self.hidden_dim, 3, *self.kernel_sizes[0])).normal_(), requires_grad=True
-        )
-
-        self.register_parameter("conv_proj_weight", self.conv_proj_weight)
-
-        self.conv_proj_bias = nn.Parameter(torch.zeros(len(self.kernel_sizes), self.hidden_dim), requires_grad=True)
-        self.register_parameter("conv_proj_bias", self.conv_proj_bias)
+        self.conv_proj_weight = nn.Parameter(torch.empty((self.hidden_dim, 3, *self.kernel_sizes[0])).normal_())
+        self.conv_proj_bias = nn.Parameter(torch.zeros(len(self.kernel_sizes), self.hidden_dim))
 
     def forward(self, x: Tensor) -> Tensor:
         n, c, t, h, w = x.shape  # CTHW
@@ -164,13 +158,7 @@ class TubeViT(nn.Module):
             self.hidden_dim, self.kernel_sizes, self.strides, self.offsets
         )
 
-        self.pos_embedding = self._generate_position_embedding()
-        self.pos_embedding = torch.nn.Parameter(self.pos_embedding, requires_grad=False)
-        self.register_parameter("pos_embedding", self.pos_embedding)
-
-        # Add a class token
-        self.class_token = nn.Parameter(torch.zeros(1, 1, self.hidden_dim), requires_grad=True)
-        self.register_parameter("class_token", self.class_token)
+        self.register_buffer("pos_embedding", self._generate_position_embedding())
 
         self.encoder = Encoder(
             num_layers=num_layers,
@@ -195,11 +183,6 @@ class TubeViT(nn.Module):
 
     def forward(self, x):
         x = self.sparse_tubes_tokenizer(x)
-        n = x.shape[0]
-
-        # Expand the class token to the full batch
-        batch_class_token = self.class_token.expand(n, -1, -1)
-        x = torch.cat([batch_class_token, x], dim=1)
 
         x = x + self.pos_embedding
 
@@ -219,8 +202,8 @@ class TubeViT(nn.Module):
         output = np.floor(((self.video_shape[[1, 2, 3]] - offset - kernel_size) / stride) + 1).astype(int)
         return output
 
-    def _generate_position_embedding(self) -> torch.nn.Parameter:
-        position_embedding = [torch.zeros(1, self.hidden_dim)]
+    def _generate_position_embedding(self) -> Tensor:
+        position_embedding = []
 
         for i in range(len(self.kernel_sizes)):
             tube_shape = self._calc_conv_shape(self.kernel_sizes[i], self.strides[i], self.offsets[i])
@@ -255,8 +238,8 @@ class TubeViTLightningModule(pl.LightningModule):
         attention_dropout: float = 0.0,
         **kwargs,
     ):
-        self.save_hyperparameters()
         super().__init__()
+        self.save_hyperparameters()
         self.num_classes = num_classes
         self.model = TubeViT(
             num_classes=num_classes,
