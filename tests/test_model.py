@@ -7,6 +7,7 @@ from tubevit.model import (
     SparseTubesTokenizer,
     TubeViT,
     TubeViTLightningModule,
+    _apply_s2d,
     _cosine_with_warmup_lr_lambda,
 )
 
@@ -31,6 +32,16 @@ TOTAL_TOKENS = 44
 _KERNEL_SIZES = ((8, 8, 8), (16, 4, 4), (4, 12, 12), (1, 16, 16))
 _STRIDES = ((16, 32, 32), (6, 32, 32), (16, 32, 32), (32, 16, 16))
 _OFFSETS = ((0, 0, 0), (4, 8, 8), (0, 16, 16), (0, 0, 0))
+
+# Paper's reference S2D config (Table 12): temporal 2× for tube 0, spatial 2×2 for tube 1
+_S2D_FACTORS = ((2, 1), (1, 2), (1, 1), (1, 1))
+
+# Token count with _S2D_FACTORS applied to VIDEO_SHAPE = [3, 32, 64, 64]:
+#   tube0: (2,2,2) → temporal 2×: (1,2,2) = 4 tokens
+#   tube1: (3,2,2) → spatial 2×: (3,1,1) = 3 tokens
+#   tube2: (2,2,2) → no S2D     = 8 tokens
+#   tube3: (1,4,4) → no S2D     = 16 tokens
+TOTAL_TOKENS_S2D = 31
 
 
 @pytest.fixture
@@ -63,6 +74,19 @@ def tubevit_interpolated():
     )
 
 
+@pytest.fixture
+def tubevit_s2d():
+    return TubeViT(
+        num_classes=NUM_CLASSES,
+        video_shape=VIDEO_SHAPE,
+        num_layers=NUM_LAYERS,
+        num_heads=NUM_HEADS,
+        hidden_dim=HIDDEN_DIM,
+        mlp_dim=MLP_DIM,
+        s2d_factors=_S2D_FACTORS,
+    )
+
+
 class TestSparseTubesTokenizer:
     @pytest.fixture
     def tokenizer(self):
@@ -72,11 +96,18 @@ class TestSparseTubesTokenizer:
     def tokenizer_interpolated(self):
         return SparseTubesTokenizer(HIDDEN_DIM, _KERNEL_SIZES, _STRIDES, _OFFSETS, interpolated_kernels=True)
 
+    @pytest.fixture
+    def tokenizer_s2d(self):
+        return SparseTubesTokenizer(HIDDEN_DIM, _KERNEL_SIZES, _STRIDES, _OFFSETS, s2d_factors=_S2D_FACTORS)
+
     def test_output_shape(self, tokenizer, video):
         assert tokenizer(video).shape == (BATCH_SIZE, TOTAL_TOKENS, HIDDEN_DIM)
 
     def test_output_shape_interpolated(self, tokenizer_interpolated, video):
         assert tokenizer_interpolated(video).shape == (BATCH_SIZE, TOTAL_TOKENS, HIDDEN_DIM)
+
+    def test_s2d_output_shape(self, tokenizer_s2d, video):
+        assert tokenizer_s2d(video).shape == (BATCH_SIZE, TOTAL_TOKENS_S2D, HIDDEN_DIM)
 
     def test_independent_has_per_tube_weights(self, tokenizer):
         param_names = {n for n, _ in tokenizer.named_parameters()}
@@ -87,7 +118,9 @@ class TestSparseTubesTokenizer:
     def test_independent_weight_shapes(self, tokenizer):
         for i, k in enumerate(_KERNEL_SIZES):
             assert tokenizer.conv_proj_weights[i].shape == (HIDDEN_DIM, 3, *k)
-        assert tokenizer.conv_proj_bias.shape == (len(_KERNEL_SIZES), HIDDEN_DIM)
+        # bias: ParameterList, one vector per tube, all hidden_dim when no S2D
+        for i in range(len(_KERNEL_SIZES)):
+            assert tokenizer.conv_proj_biases[i].shape == (HIDDEN_DIM,)
 
     def test_interpolated_has_shared_weight(self, tokenizer_interpolated):
         param_names = {n for n, _ in tokenizer_interpolated.named_parameters()}
@@ -96,7 +129,17 @@ class TestSparseTubesTokenizer:
 
     def test_interpolated_weight_shape(self, tokenizer_interpolated):
         assert tokenizer_interpolated.conv_proj_weight.shape == (HIDDEN_DIM, 3, *_KERNEL_SIZES[0])
-        assert tokenizer_interpolated.conv_proj_bias.shape == (len(_KERNEL_SIZES), HIDDEN_DIM)
+        for i in range(len(_KERNEL_SIZES)):
+            assert tokenizer_interpolated.conv_proj_biases[i].shape == (HIDDEN_DIM,)
+
+    def test_s2d_bias_shapes(self, tokenizer_s2d):
+        # tube 0: temporal 2× → conv out = HIDDEN_DIM // 2
+        assert tokenizer_s2d.conv_proj_biases[0].shape == (HIDDEN_DIM // 2,)
+        # tube 1: spatial 2× → conv out = HIDDEN_DIM // 4
+        assert tokenizer_s2d.conv_proj_biases[1].shape == (HIDDEN_DIM // 4,)
+        # tubes 2, 3: no S2D
+        assert tokenizer_s2d.conv_proj_biases[2].shape == (HIDDEN_DIM,)
+        assert tokenizer_s2d.conv_proj_biases[3].shape == (HIDDEN_DIM,)
 
     def test_no_extra_buffers(self, tokenizer):
         assert list(tokenizer.named_buffers()) == []
@@ -144,6 +187,12 @@ class TestTubeViT:
 
     def test_output_shape_interpolated(self, tubevit_interpolated, video):
         assert tubevit_interpolated(video).shape == (BATCH_SIZE, NUM_CLASSES)
+
+    def test_s2d_output_shape(self, tubevit_s2d, video):
+        assert tubevit_s2d(video).shape == (BATCH_SIZE, NUM_CLASSES)
+
+    def test_s2d_pos_embedding_shape(self, tubevit_s2d):
+        assert tubevit_s2d.pos_embedding.shape == (TOTAL_TOKENS_S2D, HIDDEN_DIM)
 
     def test_pos_embedding_is_buffer_not_parameter(self, tubevit):
         buffers = {n for n, _ in tubevit.named_buffers()}
@@ -199,6 +248,52 @@ class TestTubeViTLightningModule:
             warmup_steps=500,
         )
         assert m.hparams.warmup_steps == 500
+
+
+class TestApplyS2d:
+    def test_identity_when_no_s2d(self):
+        x = torch.randn(2, 24, 4, 8, 8)
+        out = _apply_s2d(x, t_factor=1, s_factor=1)
+        assert out.shape == x.shape
+        assert torch.equal(out, x)
+
+    def test_temporal_s2d_shape(self):
+        x = torch.randn(2, 12, 4, 8, 8)
+        out = _apply_s2d(x, t_factor=2, s_factor=1)
+        assert out.shape == (2, 24, 2, 8, 8)
+
+    def test_spatial_s2d_shape(self):
+        x = torch.randn(2, 6, 4, 8, 8)
+        out = _apply_s2d(x, t_factor=1, s_factor=2)
+        assert out.shape == (2, 24, 4, 4, 4)
+
+    def test_combined_s2d_shape(self):
+        # t=2, s=2 → fold 2 temporal + 2×2 spatial → channel ×8
+        x = torch.randn(2, 3, 4, 8, 8)
+        out = _apply_s2d(x, t_factor=2, s_factor=2)
+        assert out.shape == (2, 24, 2, 4, 4)
+
+    def test_temporal_s2d_values(self):
+        # 4 temporal frames numbered 0-3; after temporal 2×:
+        # T_new=0 → channels [0, 1],  T_new=1 → channels [2, 3]
+        x = torch.arange(4, dtype=torch.float).reshape(1, 1, 4, 1, 1)
+        out = _apply_s2d(x, t_factor=2, s_factor=1)
+        assert out.shape == (1, 2, 2, 1, 1)
+        assert out[0, 0, 0, 0, 0].item() == 0.0
+        assert out[0, 1, 0, 0, 0].item() == 1.0
+        assert out[0, 0, 1, 0, 0].item() == 2.0
+        assert out[0, 1, 1, 0, 0].item() == 3.0
+
+    def test_spatial_s2d_values(self):
+        # 4×4 grid numbered 0-15; after spatial 2×:
+        # ch0 = top-left of each 2×2 patch, ch1 = top-right, ch2 = btm-left, ch3 = btm-right
+        x = torch.arange(16, dtype=torch.float).reshape(1, 1, 1, 4, 4)
+        out = _apply_s2d(x, t_factor=1, s_factor=2)
+        assert out.shape == (1, 4, 1, 2, 2)
+        assert out[0, 0, 0].tolist() == [[0.0, 2.0], [8.0, 10.0]]
+        assert out[0, 1, 0].tolist() == [[1.0, 3.0], [9.0, 11.0]]
+        assert out[0, 2, 0].tolist() == [[4.0, 6.0], [12.0, 14.0]]
+        assert out[0, 3, 0].tolist() == [[5.0, 7.0], [13.0, 15.0]]
 
 
 class TestCosineWithWarmupLrLambda:

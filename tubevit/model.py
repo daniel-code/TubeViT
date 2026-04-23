@@ -3,7 +3,6 @@ from functools import partial
 from typing import Any, Callable, List, Union
 
 import lightning.pytorch as pl
-import numpy as np
 import torch
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
@@ -19,6 +18,21 @@ def _cosine_with_warmup_lr_lambda(current_step: int, warmup_steps: int, total_st
         return float(current_step) / float(max(1, warmup_steps))
     progress = float(current_step - warmup_steps) / float(max(1, total_steps - warmup_steps))
     return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
+
+
+def _apply_s2d(x: Tensor, t_factor: int, s_factor: int) -> Tensor:
+    """Fold temporal/spatial neighbours into channels (Space-to-Depth)."""
+    if t_factor == 1 and s_factor == 1:
+        return x
+    N, d, T, H, W = x.shape
+    if t_factor > 1:
+        x = x.reshape(N, d, T // t_factor, t_factor, H, W)
+        x = x.permute(0, 1, 3, 2, 4, 5).reshape(N, d * t_factor, T // t_factor, H, W)
+    if s_factor > 1:
+        N, d, T, H, W = x.shape
+        x = x.reshape(N, d, T, H // s_factor, s_factor, W // s_factor, s_factor)
+        x = x.permute(0, 1, 4, 6, 2, 3, 5).reshape(N, d * s_factor * s_factor, T, H // s_factor, W // s_factor)
+    return x
 
 
 class Encoder(nn.Module):
@@ -59,28 +73,37 @@ class Encoder(nn.Module):
 
 
 class SparseTubesTokenizer(nn.Module):
-    def __init__(self, hidden_dim, kernel_sizes, strides, offsets, interpolated_kernels: bool = False):
+    def __init__(
+        self, hidden_dim, kernel_sizes, strides, offsets, interpolated_kernels: bool = False, s2d_factors=None
+    ):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.kernel_sizes = kernel_sizes
         self.strides = strides
         self.offsets = offsets
         self.interpolated_kernels = interpolated_kernels
+        self.s2d_factors = s2d_factors if s2d_factors is not None else [(1, 1)] * len(kernel_sizes)
 
         if interpolated_kernels:
             # single shared kernel, trilinearly resized per tube at runtime (paper ablation, Table 7e)
+            # S2D not supported for interpolated kernels; conv always outputs hidden_dim channels.
             self.conv_proj_weight = nn.Parameter(torch.empty((hidden_dim, 3, *kernel_sizes[0])).normal_())
+            conv_out_dims = [hidden_dim] * len(kernel_sizes)
         else:
             # independent per-tube kernels (paper main results)
+            # With S2D, each conv produces hidden_dim // (t_factor * s_factor²) channels;
+            # S2D then folds those back up to hidden_dim.
+            conv_out_dims = [hidden_dim // (tf * sf * sf) for tf, sf in self.s2d_factors]
             self.conv_proj_weights = nn.ParameterList(
-                [nn.Parameter(torch.empty((hidden_dim, 3, *k)).normal_()) for k in kernel_sizes]
+                [nn.Parameter(torch.empty((conv_out_dims[i], 3, *k)).normal_()) for i, k in enumerate(kernel_sizes)]
             )
-        self.conv_proj_bias = nn.Parameter(torch.zeros(len(kernel_sizes), hidden_dim))
+        self.conv_proj_biases = nn.ParameterList([nn.Parameter(torch.zeros(d)) for d in conv_out_dims])
 
     def forward(self, x: Tensor) -> Tensor:
         n, c, t, h, w = x.shape  # CTHW
         tubes = []
         for i in range(len(self.kernel_sizes)):
+            tf, sf = self.s2d_factors[i]
             if self.interpolated_kernels:
                 weight = (
                     self.conv_proj_weight
@@ -93,9 +116,12 @@ class SparseTubesTokenizer(nn.Module):
             tube = F.conv3d(
                 x[:, :, self.offsets[i][0] :, self.offsets[i][1] :, self.offsets[i][2] :],
                 weight,
-                bias=self.conv_proj_bias[i],
+                bias=self.conv_proj_biases[i],
                 stride=self.strides[i],
             )
+
+            if tf > 1 or sf > 1:
+                tube = _apply_s2d(tube, tf, sf)
 
             tube = tube.reshape((n, self.hidden_dim, -1))
             tubes.append(tube)
@@ -140,7 +166,7 @@ class TubeViT(nn.Module):
     def __init__(
         self,
         num_classes: int,
-        video_shape: Union[List[int], np.ndarray],  # CTHW
+        video_shape: Union[List[int], Tensor],  # CTHW
         num_layers: int,
         num_heads: int,
         hidden_dim: int,
@@ -149,9 +175,10 @@ class TubeViT(nn.Module):
         attention_dropout: float = 0.0,
         representation_size=None,
         interpolated_kernels: bool = False,
+        s2d_factors=None,
     ):
         super(TubeViT, self).__init__()
-        self.video_shape = np.array(video_shape)  # CTHW
+        self.video_shape = torch.as_tensor(video_shape)  # CTHW
         self.num_classes = num_classes
         self.hidden_dim = hidden_dim
         self.kernel_sizes = (
@@ -174,12 +201,14 @@ class TubeViT(nn.Module):
             (0, 16, 16),
             (0, 0, 0),
         )
+        self.s2d_factors = s2d_factors if s2d_factors is not None else [(1, 1)] * len(self.kernel_sizes)
         self.sparse_tubes_tokenizer = SparseTubesTokenizer(
             self.hidden_dim,
             self.kernel_sizes,
             self.strides,
             self.offsets,
             interpolated_kernels=interpolated_kernels,
+            s2d_factors=self.s2d_factors,
         )
 
         self.register_buffer("pos_embedding", self._generate_position_embedding())
@@ -219,24 +248,35 @@ class TubeViT(nn.Module):
 
         return x
 
-    def _calc_conv_shape(self, kernel_size, stride, offset) -> np.ndarray:
-        kernel_size = np.array(kernel_size)
-        stride = np.array(stride)
-        offset = np.array(offset)
-        output = np.floor(((self.video_shape[[1, 2, 3]] - offset - kernel_size) / stride) + 1).astype(int)
-        return output
+    def _calc_conv_shape(self, kernel_size, stride, offset) -> Tensor:
+        kernel_size = torch.as_tensor(kernel_size)
+        stride = torch.as_tensor(stride)
+        offset = torch.as_tensor(offset)
+        return torch.floor(((self.video_shape[1:] - offset - kernel_size) / stride) + 1).long()
 
     def _generate_position_embedding(self) -> Tensor:
         position_embedding = []
 
         for i in range(len(self.kernel_sizes)):
-            tube_shape = self._calc_conv_shape(self.kernel_sizes[i], self.strides[i], self.offsets[i])
+            tf, sf = self.s2d_factors[i]
+            stride = torch.as_tensor(self.strides[i])
+            offset = torch.as_tensor(self.offsets[i], dtype=torch.float)
+            factors = torch.tensor([tf, sf, sf])
+
+            # After S2D, each output token represents a larger receptive field:
+            # stride doubles per fold, offset shifts to the group center.
+            eff_stride = stride * factors
+            eff_offset = offset + (factors.float() - 1) / 2.0 * stride.float()
+
+            conv_shape = self._calc_conv_shape(self.kernel_sizes[i], self.strides[i], self.offsets[i])
+            tube_shape = conv_shape // factors
+
             pos_embed = get_3d_sincos_pos_embed(
                 embed_dim=self.hidden_dim,
                 tube_shape=tube_shape,
                 kernel_size=self.kernel_sizes[i],
-                stride=self.strides[i],
-                offset=self.offsets[i],
+                stride=eff_stride,
+                offset=eff_offset,
             )
             position_embedding.append(pos_embed)
 
@@ -262,6 +302,7 @@ class TubeViTLightningModule(pl.LightningModule):
         dropout: float = 0.0,
         attention_dropout: float = 0.0,
         interpolated_kernels: bool = False,
+        s2d_factors=None,
         **kwargs,
     ):
         super().__init__()
@@ -277,6 +318,7 @@ class TubeViTLightningModule(pl.LightningModule):
             dropout=dropout,
             attention_dropout=attention_dropout,
             interpolated_kernels=interpolated_kernels,
+            s2d_factors=s2d_factors,
         )
 
         self.lr = lr
