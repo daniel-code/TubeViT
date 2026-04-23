@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run pre-commit run --all-files 2>&1 || true",
+            "statusMessage": "Running pre-commit...",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}
