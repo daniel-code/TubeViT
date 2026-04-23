@@ -1,30 +1,9 @@
-import sys
-
 import click
 import torch
-import torchvision.transforms._functional_tensor as _tv_functional_tensor
+from torchcodec.decoders import VideoDecoder
+from torchvision.transforms import v2
 
-# isort: off
-# pytorchvideo 0.1.5 imports torchvision.transforms.functional_tensor, which was
-# made private (_functional_tensor) in torchvision >=0.17. Alias it before any
-# pytorchvideo import so the package loads.
-sys.modules.setdefault("torchvision.transforms.functional_tensor", _tv_functional_tensor)
-
-from pytorchvideo.data.encoded_video import EncodedVideo  # noqa: E402
-from pytorchvideo.transforms import (  # noqa: E402
-    ApplyTransformToKey,
-    ShortSideScale,
-    UniformTemporalSubsample,
-)
-from torchvision.transforms import Compose, Lambda  # noqa: E402
-from torchvision.transforms._transforms_video import (  # noqa: E402
-    CenterCropVideo,
-    NormalizeVideo,
-)
-
-from tubevit.model import TubeViTLightningModule  # noqa: E402
-
-# iosrt: on
+from tubevit.model import TubeViTLightningModule
 
 
 @click.command()
@@ -53,34 +32,29 @@ def main(
         labels = f.read().splitlines()
         labels = list(map(lambda x: x.split(" ")[-1], labels))
 
-    # Compose video data transforms
-    transform = ApplyTransformToKey(
-        key="video",
-        transform=Compose(
-            [
-                UniformTemporalSubsample(frames_per_clip),
-                Lambda(lambda x: x / 255.0),
-                NormalizeVideo(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-                ShortSideScale(size=video_size[0]),
-                CenterCropVideo(crop_size=video_size),
-            ]
-        ),
+    transform = v2.Compose(
+        [
+            v2.Resize(size=video_size[0], antialias=True),
+            v2.CenterCrop(video_size),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            v2.Lambda(lambda x: x.permute(1, 0, 2, 3)),  # TCHW→CTHW
+        ]
     )
 
-    # Load video
-    video = EncodedVideo.from_path(video_path)
-    # Get clip
-    clip_start_sec = 0.0  # secs
-    clip_duration = 2.0  # secs
-    duration = video.duration
+    decoder = VideoDecoder(video_path)
+    fps = decoder.metadata.average_fps
+    duration = decoder.metadata.duration_seconds
+    clip_duration = 2.0
     video_data = []
     for i in range(10):
-        if clip_start_sec + clip_duration * (i + 1) <= duration:
-            data = video.get_clip(
-                start_sec=clip_start_sec + clip_duration * i, end_sec=clip_start_sec + clip_duration * (i + 1)
-            )
-            data = transform(data)
-            video_data.append(data["video"])
+        if clip_duration * (i + 1) > duration:
+            break
+        start_frame = int(clip_duration * i * fps)
+        end_frame = int(clip_duration * (i + 1) * fps)
+        indices = torch.linspace(start_frame, end_frame - 1, frames_per_clip).long()
+        frames = decoder.get_frames_at(indices=indices).data  # (T, C, H, W) uint8
+        video_data.append(transform(frames))
 
     video_data = torch.stack(video_data)
 

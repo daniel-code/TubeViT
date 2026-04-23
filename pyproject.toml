@@ -9,9 +9,9 @@ dependencies = [
     "lightning>=2.6.1",
     "matplotlib>=3.10.8",
     "pre-commit>=4.5.1",
-    "pytorchvideo>=0.1.5",
     "seaborn>=0.13.2",
     "torch>=2.11.0",
+    "torchcodec>=0.11.1",
     "torchmetrics>=1.9.0",
     "torchvision>=0.26.0",
 ]

@@ -2,15 +2,13 @@ import os
 import pickle
 
 import click
+import lightning.pytorch as pl
 import matplotlib.pyplot as plt
-import pytorch_lightning as pl
 import seaborn as sns
 import torch
-from pytorchvideo.transforms import Normalize
 from torch.utils.data import DataLoader, RandomSampler
 from torchmetrics.functional import accuracy, auroc, confusion_matrix, f1_score
-from torchvision.transforms import transforms as T
-from torchvision.transforms._transforms_video import ToTensorVideo
+from torchvision.transforms import v2
 
 from tubevit.dataset import MyUCF101
 from tubevit.model import TubeViTLightningModule
@@ -47,11 +45,13 @@ def main(
         labels = f.read().splitlines()
         labels = list(map(lambda x: x.split(" ")[-1], labels))
 
-    test_transform = T.Compose(
+    test_transform = v2.Compose(
         [
-            ToTensorVideo(),
-            T.Resize(size=video_size),
-            Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            v2.Lambda(lambda x: x.permute(0, 3, 1, 2)),  # THWC→TCHW uint8
+            v2.Resize(size=video_size, antialias=True),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            v2.Lambda(lambda x: x.permute(1, 0, 2, 3)),  # TCHW→CTHW
         ]
     )
 

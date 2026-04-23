@@ -2,12 +2,11 @@ import os
 import pickle
 
 import click
+import lightning.pytorch as pl
 import matplotlib.pyplot as plt
-import pytorch_lightning as pl
-from pytorchvideo.transforms import Normalize, Permute, RandAugment
+import torch
 from torch.utils.data import DataLoader, RandomSampler
-from torchvision.transforms import transforms as T
-from torchvision.transforms._transforms_video import ToTensorVideo
+from torchvision.transforms import v2
 
 from tubevit.dataset import MyUCF101
 
@@ -30,14 +29,14 @@ def main(dataset_root, video_size, annotation_path, label_path, frames_per_clip,
     imagenet_mean = [0.485, 0.456, 0.406]
     imagenet_std = [0.229, 0.224, 0.225]
 
-    train_transform = T.Compose(
+    train_transform = v2.Compose(
         [
-            ToTensorVideo(),  # C, T, H, W
-            Permute(dims=[1, 0, 2, 3]),  # T, C, H, W
-            RandAugment(magnitude=10, num_layers=2),
-            Permute(dims=[1, 0, 2, 3]),  # C, T, H, W
-            T.Resize(size=video_size),
-            Normalize(mean=imagenet_mean, std=imagenet_std),
+            v2.Lambda(lambda x: x.permute(0, 3, 1, 2)),  # THWC→TCHW uint8
+            v2.Resize(size=video_size, antialias=True),
+            v2.RandAugment(num_ops=2, magnitude=10),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize(mean=imagenet_mean, std=imagenet_std),
+            v2.Lambda(lambda x: x.permute(1, 0, 2, 3)),  # TCHW→CTHW
         ]
     )
 
