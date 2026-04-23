@@ -6,13 +6,13 @@ from ["Rethinking Video ViTs: Sparse Video Tubes for Joint Image and Video Learn
 ## Status
 
 - [x] Fixed 3D sincos positional embedding (computed in physical input-video coordinates)
-- [ ] Sparse tube construction
+- [x] Sparse tube construction
     - [x] Multi-tube (4 hard-coded configs: `kernel_sizes`, `strides`, `offsets` in `tubevit/model.py`)
     - [x] Interpolated kernels (a single learnable 3D conv weight is trilinear-resized per tube at every forward pass)
-    - [ ] Space-to-depth
+    - [x] Space-to-depth (configurable temporal and spatial folding factors per tube)
     - [ ] Configurable tubes
 - [x] Pipeline
-    - [x] Training
+    - [x] Training (video-only and joint image+video)
     - [x] Evaluation
     - [x] Inference
 
@@ -22,7 +22,7 @@ from ["Rethinking Video ViTs: Sparse Video Tubes for Joint Image and Video Learn
 - [`uv`](https://docs.astral.sh/uv/) for dependency management
 - A CUDA-capable GPU is recommended
 
-Built on `torch ≥ 2.11`, `lightning ≥ 2.6` (PyTorch Lightning 2.x), `torchvision`, `pytorchvideo`, `torchmetrics`, and
+Built on `torch ≥ 2.11`, `lightning ≥ 2.6` (PyTorch Lightning 2.x), `torchvision`, `torchmetrics`, `tensorboard`, and
 `click`. The full dependency graph is pinned in `uv.lock`.
 
 ## Setup
@@ -56,17 +56,45 @@ python scripts/convert_vit_weight.py
 
 ### 3. Train
 
+**Video-only (UCF-101):**
+
 ```bash
 python scripts/train.py \
     -r path/to/ucf101 \
     -a path/to/ucfTrainTestlist
 ```
 
+**Joint image + video** (paper §3.5 — separate heads per domain, shared encoder):
+
+```bash
+python scripts/train.py \
+    -r path/to/ucf101 \
+    -a path/to/ucfTrainTestlist \
+    --image-dataset-path path/to/imagenette2-320 \
+    --image-num-classes 10
+```
+
+`--image-dataset-path` expects a directory with `train/` and `val/` sub-folders in ImageFolder layout
+(e.g. Imagenette2-320). When provided, the model trains two classification heads — one for video, one for
+image — and logs `train_loss` / `train_img_loss` (and corresponding `_acc`, `_f1`) to TensorBoard separately.
+
+**Common options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-b` / `--batch-size` | 32 | Batch size |
+| `-f` / `--frames-per-clip` | 32 | Frames sampled per UCF-101 clip |
+| `--max-epochs` | 10 | Training epochs |
+| `--lr` | 1e-4 | Learning rate (paper: 5e-5 for ViT-B) |
+| `--weight-decay` | 0.001 | Adam weight decay |
+| `--warmup-steps` | 0 | Linear LR warmup steps (paper: 10000) |
+| `--interpolated-kernels` | off | Ablation: share one 3D conv kernel across all tubes |
+| `--fast-dev-run` | off | One-batch sanity check |
+
 - TensorBoard logs: `logs/TubeViT/`
-- Checkpoint: `./models/tubevit_ucf101.ckpt`
-- UCF101 clip metadata is cached to `ucf101-{train,val}-meta.pickle` at the repo root on first run. Delete to
+- Checkpoint saved to: `./models/tubevit_ucf101.ckpt`
+- UCF-101 clip metadata is cached to `ucf101-{train,val}-meta.pickle` at the repo root on first run. Delete to
   invalidate.
-- Add `--fast-dev-run` for a one-batch sanity check.
 
 ### 4. Evaluate
 
