@@ -144,4 +144,4 @@ lightning_logs
 data/
 
 # tensorboard log
-logs/
+*logs/
