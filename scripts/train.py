@@ -9,7 +9,7 @@ from lightning.pytorch.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader
 from torchvision.transforms import v2
 
-from tubevit.dataset import MyUCF101
+from tubevit.dataset import Imagenette2Dataset, MyUCF101
 from tubevit.model import TubeViTLightningModule
 
 
@@ -46,6 +46,13 @@ from tubevit.model import TubeViTLightningModule
     help="Share one conv kernel across tubes via trilinear interpolation (paper ablation). "
     "Required when loading tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt.",
 )
+@click.option(
+    "--image-dataset-path",
+    type=click.Path(exists=True),
+    default=None,
+    help="Root of Imagenette2 dataset (e.g. data/raw/imagenette2-320). Enables joint training.",
+)
+@click.option("--image-num-classes", type=int, default=10, show_default=True, help="Num classes for image dataset.")
 def main(
     dataset_root,
     annotation_path,
@@ -62,6 +69,8 @@ def main(
     weight_decay,
     warmup_steps,
     interpolated_kernels,
+    image_dataset_path,
+    image_num_classes,
 ):
     pl.seed_everything(seed)
 
@@ -86,6 +95,23 @@ def main(
             v2.ToDtype(torch.float32, scale=True),
             v2.Normalize(mean=imagenet_mean, std=imagenet_std),
             v2.Lambda(lambda x: x.permute(1, 0, 2, 3)),  # TCHW→CTHW
+        ]
+    )
+
+    image_train_transform = v2.Compose(
+        [
+            v2.Resize(size=video_size, antialias=True),
+            v2.RandAugment(num_ops=2, magnitude=10),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize(mean=imagenet_mean, std=imagenet_std),
+        ]
+    )
+
+    image_test_transform = v2.Compose(
+        [
+            v2.Resize(size=video_size, antialias=True),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize(mean=imagenet_mean, std=imagenet_std),
         ]
     )
 
@@ -147,6 +173,37 @@ def main(
         pin_memory=True,
     )
 
+    image_train_dataloader = None
+    image_val_dataloader = None
+    if image_dataset_path is not None:
+        image_train_set = Imagenette2Dataset(
+            root=os.path.join(image_dataset_path, "train"),
+            frames_per_clip=frames_per_clip,
+            transform=image_train_transform,
+        )
+        image_val_set = Imagenette2Dataset(
+            root=os.path.join(image_dataset_path, "val"),
+            frames_per_clip=frames_per_clip,
+            transform=image_test_transform,
+        )
+        image_train_dataloader = DataLoader(
+            image_train_set,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=True,
+            drop_last=True,
+            pin_memory=True,
+        )
+        image_val_dataloader = DataLoader(
+            image_val_set,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=False,
+            drop_last=True,
+            pin_memory=True,
+        )
+        print(f"Joint training: {len(image_train_set)} image samples, {image_num_classes} classes")
+
     x, y = next(iter(train_dataloader))
     print(x.shape)
 
@@ -174,6 +231,7 @@ def main(
         weight_path="tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt",
         max_epochs=max_epochs,
         interpolated_kernels=interpolated_kernels,
+        image_num_classes=image_num_classes if image_dataset_path is not None else None,
     )
 
     callbacks = [pl.callbacks.LearningRateMonitor(logging_interval="epoch")]
@@ -186,7 +244,13 @@ def main(
         logger=logger,
         callbacks=callbacks,
     )
-    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
+    train_loaders = [train_dataloader]
+    val_loaders = [val_dataloader]
+    if image_train_dataloader is not None:
+        train_loaders.append(image_train_dataloader)
+        val_loaders.append(image_val_dataloader)
+
+    trainer.fit(model, train_dataloaders=train_loaders, val_dataloaders=val_loaders)
     trainer.save_checkpoint("./models/tubevit_ucf101.ckpt")
 
 
