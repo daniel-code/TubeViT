@@ -6,10 +6,10 @@ import lightning.pytorch as pl
 import matplotlib.pyplot as plt
 import torch
 from lightning.pytorch.loggers import TensorBoardLogger
-from torch.utils.data import DataLoader
+from torch.utils.data import ConcatDataset, DataLoader
 from torchvision.transforms import v2
 
-from tubevit.dataset import Imagenette2Dataset, MyUCF101
+from tubevit.dataset import DomainTaggedDataset, Imagenette2Dataset, MyUCF101
 from tubevit.model import TubeViTLightningModule
 
 
@@ -173,8 +173,6 @@ def main(
         pin_memory=True,
     )
 
-    image_train_dataloader = None
-    image_val_dataloader = None
     if image_dataset_path is not None:
         image_train_set = Imagenette2Dataset(
             root=os.path.join(image_dataset_path, "train"),
@@ -186,25 +184,27 @@ def main(
             frames_per_clip=frames_per_clip,
             transform=image_test_transform,
         )
-        image_train_dataloader = DataLoader(
-            image_train_set,
+        print(f"Joint training: {len(image_train_set)} image samples, {image_num_classes} classes")
+        joint_train_set = ConcatDataset([DomainTaggedDataset(train_set, 0), DomainTaggedDataset(image_train_set, 1)])
+        joint_val_set = ConcatDataset([DomainTaggedDataset(val_set, 0), DomainTaggedDataset(image_val_set, 1)])
+        train_dataloader = DataLoader(
+            joint_train_set,
             batch_size=batch_size,
             num_workers=num_workers,
             shuffle=True,
             drop_last=True,
             pin_memory=True,
         )
-        image_val_dataloader = DataLoader(
-            image_val_set,
+        val_dataloader = DataLoader(
+            joint_val_set,
             batch_size=batch_size,
             num_workers=num_workers,
             shuffle=False,
             drop_last=True,
             pin_memory=True,
         )
-        print(f"Joint training: {len(image_train_set)} image samples, {image_num_classes} classes")
 
-    x, y = next(iter(train_dataloader))
+    x = next(iter(train_dataloader))[0]
     print(x.shape)
 
     if preview_video:
@@ -244,13 +244,7 @@ def main(
         logger=logger,
         callbacks=callbacks,
     )
-    train_loaders = [train_dataloader]
-    val_loaders = [val_dataloader]
-    if image_train_dataloader is not None:
-        train_loaders.append(image_train_dataloader)
-        val_loaders.append(image_val_dataloader)
-
-    trainer.fit(model, train_dataloaders=train_loaders, val_dataloaders=val_loaders)
+    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
     trainer.save_checkpoint("./models/tubevit_ucf101.ckpt")
 
 

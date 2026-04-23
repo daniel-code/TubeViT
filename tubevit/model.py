@@ -347,45 +347,109 @@ class TubeViTLightningModule(pl.LightningModule):
     def forward(self, x):
         return self.model(x)
 
-    def training_step(self, batch, batch_idx, dataloader_idx=0):
-        x, y = batch
-        if dataloader_idx == 0 or self.image_head is None:
+    def training_step(self, batch, batch_idx):
+        if self.image_head is None:
+            x, y = batch
             y_hat = self.model.heads(self.model.encode(x))
-            num_classes = self.num_classes
-            prefix = "train"
-        else:
-            y_hat = self.image_head(self.model.encode(x))
-            num_classes = self.image_num_classes
-            prefix = "train_img"
+            loss = self.loss_func(y_hat, y)
+            y_pred = torch.softmax(y_hat, dim=-1)
+            self.log("train_loss", loss, prog_bar=True)
+            self.log("train_acc", accuracy(y_pred, y, task="multiclass", num_classes=self.num_classes), prog_bar=True)
+            self.log("train_f1", f1_score(y_pred, y, task="multiclass", num_classes=self.num_classes), prog_bar=True)
+            return loss
 
-        loss = self.loss_func(y_hat, y)
-        y_pred = torch.softmax(y_hat, dim=-1)
+        x, y, domain = batch
+        total_loss = 0
 
-        self.log(f"{prefix}_loss", loss, prog_bar=True)
-        self.log(f"{prefix}_acc", accuracy(y_pred, y, task="multiclass", num_classes=num_classes), prog_bar=True)
-        self.log(f"{prefix}_f1", f1_score(y_pred, y, task="multiclass", num_classes=num_classes), prog_bar=True)
+        video_mask = domain == 0
+        if video_mask.any():
+            y_hat = self.model.heads(self.model.encode(x[video_mask]))
+            loss = self.loss_func(y_hat, y[video_mask])
+            y_pred = torch.softmax(y_hat, dim=-1)
+            self.log("train_loss", loss, prog_bar=True)
+            self.log(
+                "train_acc",
+                accuracy(y_pred, y[video_mask], task="multiclass", num_classes=self.num_classes),
+                prog_bar=True,
+            )
+            self.log(
+                "train_f1",
+                f1_score(y_pred, y[video_mask], task="multiclass", num_classes=self.num_classes),
+                prog_bar=True,
+            )
+            total_loss = total_loss + loss
 
-        return loss
+        image_mask = domain == 1
+        if image_mask.any():
+            y_hat = self.image_head(self.model.encode(x[image_mask]))
+            loss = self.loss_func(y_hat, y[image_mask])
+            y_pred = torch.softmax(y_hat, dim=-1)
+            self.log("train_img_loss", loss, prog_bar=True)
+            self.log(
+                "train_img_acc",
+                accuracy(y_pred, y[image_mask], task="multiclass", num_classes=self.image_num_classes),
+                prog_bar=True,
+            )
+            self.log(
+                "train_img_f1",
+                f1_score(y_pred, y[image_mask], task="multiclass", num_classes=self.image_num_classes),
+                prog_bar=True,
+            )
+            total_loss = total_loss + loss
 
-    def validation_step(self, batch, batch_idx, dataloader_idx=0):
-        x, y = batch
-        if dataloader_idx == 0 or self.image_head is None:
+        return total_loss
+
+    def validation_step(self, batch, batch_idx):
+        if self.image_head is None:
+            x, y = batch
             y_hat = self.model.heads(self.model.encode(x))
-            num_classes = self.num_classes
-            prefix = "val"
-        else:
-            y_hat = self.image_head(self.model.encode(x))
-            num_classes = self.image_num_classes
-            prefix = "val_img"
+            loss = self.loss_func(y_hat, y)
+            y_pred = torch.softmax(y_hat, dim=-1)
+            self.log("val_loss", loss, prog_bar=True)
+            self.log("val_acc", accuracy(y_pred, y, task="multiclass", num_classes=self.num_classes), prog_bar=True)
+            self.log("val_f1", f1_score(y_pred, y, task="multiclass", num_classes=self.num_classes), prog_bar=True)
+            return loss
 
-        loss = self.loss_func(y_hat, y)
-        y_pred = torch.softmax(y_hat, dim=-1)
+        x, y, domain = batch
+        total_loss = 0
 
-        self.log(f"{prefix}_loss", loss, prog_bar=True)
-        self.log(f"{prefix}_acc", accuracy(y_pred, y, task="multiclass", num_classes=num_classes), prog_bar=True)
-        self.log(f"{prefix}_f1", f1_score(y_pred, y, task="multiclass", num_classes=num_classes), prog_bar=True)
+        video_mask = domain == 0
+        if video_mask.any():
+            y_hat = self.model.heads(self.model.encode(x[video_mask]))
+            loss = self.loss_func(y_hat, y[video_mask])
+            y_pred = torch.softmax(y_hat, dim=-1)
+            self.log("val_loss", loss, prog_bar=True)
+            self.log(
+                "val_acc",
+                accuracy(y_pred, y[video_mask], task="multiclass", num_classes=self.num_classes),
+                prog_bar=True,
+            )
+            self.log(
+                "val_f1",
+                f1_score(y_pred, y[video_mask], task="multiclass", num_classes=self.num_classes),
+                prog_bar=True,
+            )
+            total_loss = total_loss + loss
 
-        return loss
+        image_mask = domain == 1
+        if image_mask.any():
+            y_hat = self.image_head(self.model.encode(x[image_mask]))
+            loss = self.loss_func(y_hat, y[image_mask])
+            y_pred = torch.softmax(y_hat, dim=-1)
+            self.log("val_img_loss", loss, prog_bar=True)
+            self.log(
+                "val_img_acc",
+                accuracy(y_pred, y[image_mask], task="multiclass", num_classes=self.image_num_classes),
+                prog_bar=True,
+            )
+            self.log(
+                "val_img_f1",
+                f1_score(y_pred, y[image_mask], task="multiclass", num_classes=self.image_num_classes),
+                prog_bar=True,
+            )
+            total_loss = total_loss + loss
+
+        return total_loss
 
     def on_train_epoch_end(self) -> None:
         self.log("lr", self.optimizers().optimizer.param_groups[0]["lr"], on_step=False, on_epoch=True)

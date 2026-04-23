@@ -1,6 +1,7 @@
 from typing import Callable, Optional, Tuple
 
 from torch import Tensor
+from torch.utils.data import Dataset
 from torchvision.datasets import UCF101, ImageFolder
 from torchvision.transforms import v2
 
@@ -37,3 +38,22 @@ class Imagenette2Dataset(ImageFolder):
             img = self.clip_transform(img)  # (C, H, W) float32
         video = img.unsqueeze(1).repeat(1, self.frames_per_clip, 1, 1)  # (C, T, H, W)
         return video, label
+
+
+class DomainTaggedDataset(Dataset):
+    """Wraps any (video, label) dataset and appends an integer domain tag.
+
+    Returns (video, label, domain) so joint-training batches can be split
+    by domain inside training_step without a separate DataLoader per source.
+    """
+
+    def __init__(self, dataset: Dataset, domain: int):
+        self.dataset = dataset
+        self.domain = domain
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __getitem__(self, idx: int) -> Tuple[Tensor, int, int]:
+        video, label = self.dataset[idx]
+        return video, label, self.domain
