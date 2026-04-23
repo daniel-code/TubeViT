@@ -26,6 +26,14 @@ from tubevit.model import TubeViTLightningModule
 @click.option("--fast-dev-run", type=bool, is_flag=True, show_default=True, default=False)
 @click.option("--seed", type=int, default=42, help="random seed.")
 @click.option("--preview-video", type=bool, is_flag=True, show_default=True, default=False, help="Show input video")
+@click.option(
+    "--interpolated-kernels",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Share one conv kernel across tubes via trilinear interpolation (paper ablation). "
+    "Required when loading tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt.",
+)
 def main(
     dataset_root,
     annotation_path,
@@ -38,6 +46,7 @@ def main(
     fast_dev_run,
     seed,
     preview_video,
+    interpolated_kernels,
 ):
     pl.seed_everything(seed)
 
@@ -146,6 +155,7 @@ def main(
         weight_decay=0.001,
         weight_path="tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt",
         max_epochs=max_epochs,
+        interpolated_kernels=interpolated_kernels,
     )
 
     callbacks = [pl.callbacks.LearningRateMonitor(logging_interval="epoch")]

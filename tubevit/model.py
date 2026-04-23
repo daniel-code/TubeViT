@@ -51,24 +51,36 @@ class Encoder(nn.Module):
 
 
 class SparseTubesTokenizer(nn.Module):
-    def __init__(self, hidden_dim, kernel_sizes, strides, offsets):
+    def __init__(self, hidden_dim, kernel_sizes, strides, offsets, interpolated_kernels: bool = False):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.kernel_sizes = kernel_sizes
         self.strides = strides
         self.offsets = offsets
+        self.interpolated_kernels = interpolated_kernels
 
-        self.conv_proj_weight = nn.Parameter(torch.empty((self.hidden_dim, 3, *self.kernel_sizes[0])).normal_())
-        self.conv_proj_bias = nn.Parameter(torch.zeros(len(self.kernel_sizes), self.hidden_dim))
+        if interpolated_kernels:
+            # single shared kernel, trilinearly resized per tube at runtime (paper ablation, Table 7e)
+            self.conv_proj_weight = nn.Parameter(torch.empty((hidden_dim, 3, *kernel_sizes[0])).normal_())
+        else:
+            # independent per-tube kernels (paper main results)
+            self.conv_proj_weights = nn.ParameterList(
+                [nn.Parameter(torch.empty((hidden_dim, 3, *k)).normal_()) for k in kernel_sizes]
+            )
+        self.conv_proj_bias = nn.Parameter(torch.zeros(len(kernel_sizes), hidden_dim))
 
     def forward(self, x: Tensor) -> Tensor:
         n, c, t, h, w = x.shape  # CTHW
         tubes = []
         for i in range(len(self.kernel_sizes)):
-            if i == 0:
-                weight = self.conv_proj_weight
+            if self.interpolated_kernels:
+                weight = (
+                    self.conv_proj_weight
+                    if i == 0
+                    else F.interpolate(self.conv_proj_weight, self.kernel_sizes[i], mode="trilinear")
+                )
             else:
-                weight = F.interpolate(self.conv_proj_weight, self.kernel_sizes[i], mode="trilinear")
+                weight = self.conv_proj_weights[i]
 
             tube = F.conv3d(
                 x[:, :, self.offsets[i][0] :, self.offsets[i][1] :, self.offsets[i][2] :],
@@ -78,7 +90,6 @@ class SparseTubesTokenizer(nn.Module):
             )
 
             tube = tube.reshape((n, self.hidden_dim, -1))
-
             tubes.append(tube)
 
         x = torch.cat(tubes, dim=-1)
@@ -129,6 +140,7 @@ class TubeViT(nn.Module):
         dropout: float = 0.0,
         attention_dropout: float = 0.0,
         representation_size=None,
+        interpolated_kernels: bool = False,
     ):
         super(TubeViT, self).__init__()
         self.video_shape = np.array(video_shape)  # CTHW
@@ -155,7 +167,11 @@ class TubeViT(nn.Module):
             (0, 0, 0),
         )
         self.sparse_tubes_tokenizer = SparseTubesTokenizer(
-            self.hidden_dim, self.kernel_sizes, self.strides, self.offsets
+            self.hidden_dim,
+            self.kernel_sizes,
+            self.strides,
+            self.offsets,
+            interpolated_kernels=interpolated_kernels,
         )
 
         self.register_buffer("pos_embedding", self._generate_position_embedding())
@@ -236,6 +252,7 @@ class TubeViTLightningModule(pl.LightningModule):
         label_smoothing: float = 0.0,
         dropout: float = 0.0,
         attention_dropout: float = 0.0,
+        interpolated_kernels: bool = False,
         **kwargs,
     ):
         super().__init__()
@@ -250,6 +267,7 @@ class TubeViTLightningModule(pl.LightningModule):
             mlp_dim=mlp_dim,
             dropout=dropout,
             attention_dropout=attention_dropout,
+            interpolated_kernels=interpolated_kernels,
         )
 
         self.lr = lr

@@ -49,23 +49,53 @@ def tubevit():
     )
 
 
+@pytest.fixture
+def tubevit_interpolated():
+    return TubeViT(
+        num_classes=NUM_CLASSES,
+        video_shape=VIDEO_SHAPE,
+        num_layers=NUM_LAYERS,
+        num_heads=NUM_HEADS,
+        hidden_dim=HIDDEN_DIM,
+        mlp_dim=MLP_DIM,
+        interpolated_kernels=True,
+    )
+
+
 class TestSparseTubesTokenizer:
     @pytest.fixture
     def tokenizer(self):
         return SparseTubesTokenizer(HIDDEN_DIM, _KERNEL_SIZES, _STRIDES, _OFFSETS)
 
+    @pytest.fixture
+    def tokenizer_interpolated(self):
+        return SparseTubesTokenizer(HIDDEN_DIM, _KERNEL_SIZES, _STRIDES, _OFFSETS, interpolated_kernels=True)
+
     def test_output_shape(self, tokenizer, video):
-        out = tokenizer(video)
-        assert out.shape == (BATCH_SIZE, TOTAL_TOKENS, HIDDEN_DIM)
+        assert tokenizer(video).shape == (BATCH_SIZE, TOTAL_TOKENS, HIDDEN_DIM)
 
-    def test_parameters_registered(self, tokenizer):
-        names = {n for n, _ in tokenizer.named_parameters()}
-        assert "conv_proj_weight" in names
-        assert "conv_proj_bias" in names
+    def test_output_shape_interpolated(self, tokenizer_interpolated, video):
+        assert tokenizer_interpolated(video).shape == (BATCH_SIZE, TOTAL_TOKENS, HIDDEN_DIM)
 
-    def test_weight_shapes(self, tokenizer):
-        assert tokenizer.conv_proj_weight.shape == (HIDDEN_DIM, 3, *_KERNEL_SIZES[0])
+    def test_independent_has_per_tube_weights(self, tokenizer):
+        param_names = {n for n, _ in tokenizer.named_parameters()}
+        assert "conv_proj_weights.0" in param_names
+        assert len(tokenizer.conv_proj_weights) == len(_KERNEL_SIZES)
+        assert "conv_proj_weight" not in param_names
+
+    def test_independent_weight_shapes(self, tokenizer):
+        for i, k in enumerate(_KERNEL_SIZES):
+            assert tokenizer.conv_proj_weights[i].shape == (HIDDEN_DIM, 3, *k)
         assert tokenizer.conv_proj_bias.shape == (len(_KERNEL_SIZES), HIDDEN_DIM)
+
+    def test_interpolated_has_shared_weight(self, tokenizer_interpolated):
+        param_names = {n for n, _ in tokenizer_interpolated.named_parameters()}
+        assert "conv_proj_weight" in param_names
+        assert not any("conv_proj_weights" in n for n in param_names)
+
+    def test_interpolated_weight_shape(self, tokenizer_interpolated):
+        assert tokenizer_interpolated.conv_proj_weight.shape == (HIDDEN_DIM, 3, *_KERNEL_SIZES[0])
+        assert tokenizer_interpolated.conv_proj_bias.shape == (len(_KERNEL_SIZES), HIDDEN_DIM)
 
     def test_no_extra_buffers(self, tokenizer):
         assert list(tokenizer.named_buffers()) == []
@@ -110,6 +140,9 @@ class TestEncoder:
 class TestTubeViT:
     def test_output_shape(self, tubevit, video):
         assert tubevit(video).shape == (BATCH_SIZE, NUM_CLASSES)
+
+    def test_output_shape_interpolated(self, tubevit_interpolated, video):
+        assert tubevit_interpolated(video).shape == (BATCH_SIZE, NUM_CLASSES)
 
     def test_pos_embedding_is_buffer_not_parameter(self, tubevit):
         buffers = {n for n, _ in tubevit.named_buffers()}

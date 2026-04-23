@@ -19,7 +19,15 @@ from tubevit.model import TubeViT
     default="tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt",
     help="output model weight name.",
 )
-def main(num_classes, frames_per_clip, video_size, output_path):
+@click.option(
+    "--interpolated-kernels",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Produce weights for the interpolated-kernel variant (single shared kernel). "
+    "Default produces independent per-tube weights (paper main results).",
+)
+def main(num_classes, frames_per_clip, video_size, output_path, interpolated_kernels):
     x = np.random.random((1, 3, frames_per_clip, video_size[0], video_size[1]))
     x = Tensor(x)
     print("x: ", x.shape)
@@ -35,11 +43,12 @@ def main(num_classes, frames_per_clip, video_size, output_path):
         num_heads=12,
         hidden_dim=768,
         mlp_dim=3072,
+        interpolated_kernels=interpolated_kernels,
     )
 
     weights = ViT_B_16_Weights.DEFAULT.get_state_dict(progress=True)
 
-    # inflated vit path convolution layer weight
+    # inflate ViT-B/16 2D patch-embed weight → (768, 3, 8, 8, 8)
     conv_proj_weight = weights["conv_proj.weight"]
     conv_proj_weight = F.interpolate(conv_proj_weight, (8, 8), mode="bilinear")
     conv_proj_weight = torch.unsqueeze(conv_proj_weight, dim=2)
@@ -52,7 +61,15 @@ def main(num_classes, frames_per_clip, video_size, output_path):
     weights.pop("heads.head.bias")
 
     model.load_state_dict(weights, strict=False)
-    model.sparse_tubes_tokenizer.conv_proj_weight = torch.nn.Parameter(conv_proj_weight, requires_grad=True)
+
+    tokenizer = model.sparse_tubes_tokenizer
+    if interpolated_kernels:
+        tokenizer.conv_proj_weight = torch.nn.Parameter(conv_proj_weight)
+    else:
+        # initialize each per-tube weight by interpolating the inflated base kernel to that tube's size
+        for i, k in enumerate(tokenizer.kernel_sizes):
+            w = conv_proj_weight if i == 0 else F.interpolate(conv_proj_weight, k, mode="trilinear")
+            tokenizer.conv_proj_weights[i] = torch.nn.Parameter(w.clone())
 
     torch.save(model.state_dict(), output_path)
 

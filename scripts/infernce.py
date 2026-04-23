@@ -33,12 +33,21 @@ from tubevit.model import TubeViTLightningModule  # noqa: E402
 @click.option("--label-path", type=click.Path(exists=True), required=True, help="path to classInd.txt.")
 @click.option("-f", "--frames-per-clip", type=int, default=32, help="frame per clip.")
 @click.option("-v", "--video-size", type=click.Tuple([int, int]), default=(224, 224), help="frame per clip.")
+@click.option(
+    "--interpolated-kernels",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Share one conv kernel across tubes via trilinear interpolation. "
+    "Only used when loading a raw .pt file; ignored for .ckpt (hparams are restored automatically).",
+)
 def main(
     video_path,
     model_path,
     label_path,
     frames_per_clip,
     video_size,
+    interpolated_kernels,
 ):
     with open(label_path, "r") as f:
         labels = f.read().splitlines()
@@ -89,6 +98,7 @@ def main(
             hidden_dim=768,
             mlp_dim=3072,
             weight_path=model_path,
+            interpolated_kernels=interpolated_kernels,
         )
     model.eval()
     with torch.no_grad():
