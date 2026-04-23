@@ -142,3 +142,6 @@ lightning_logs
 
 # ignore dataset
 data/
+
+# tensorboard log
+logs/
