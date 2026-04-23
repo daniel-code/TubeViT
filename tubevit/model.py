@@ -1,6 +1,6 @@
 import math
 from functools import partial
-from typing import Any, Callable, List, Union
+from typing import Any, Callable, List, Optional, Union
 
 import lightning.pytorch as pl
 import torch
@@ -248,6 +248,13 @@ class TubeViT(nn.Module):
 
         return x
 
+    def encode(self, x: Tensor) -> Tensor:
+        """Return pooled features before the classification head."""
+        x = self.sparse_tubes_tokenizer(x)
+        x = x + self.pos_embedding
+        x = self.encoder(x)
+        return self.attention_pooling(x)
+
     def _calc_conv_shape(self, kernel_size, stride, offset) -> Tensor:
         kernel_size = torch.as_tensor(kernel_size)
         stride = torch.as_tensor(stride)
@@ -303,6 +310,7 @@ class TubeViTLightningModule(pl.LightningModule):
         attention_dropout: float = 0.0,
         interpolated_kernels: bool = False,
         s2d_factors=None,
+        image_num_classes: Optional[int] = None,
         **kwargs,
     ):
         super().__init__()
@@ -330,37 +338,52 @@ class TubeViTLightningModule(pl.LightningModule):
         self.warmup_steps = warmup_steps
         self.max_epochs = max_epochs
         self.weight_decay = weight_decay
+        self.image_num_classes = image_num_classes
+        if image_num_classes is not None:
+            self.image_head = nn.Linear(hidden_dim, image_num_classes)
+        else:
+            self.image_head = None
 
     def forward(self, x):
         return self.model(x)
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx, dataloader_idx=0):
         x, y = batch
-        y_hat = self(x)
+        if dataloader_idx == 0 or self.image_head is None:
+            y_hat = self.model.heads(self.model.encode(x))
+            num_classes = self.num_classes
+            prefix = "train"
+        else:
+            y_hat = self.image_head(self.model.encode(x))
+            num_classes = self.image_num_classes
+            prefix = "train_img"
 
         loss = self.loss_func(y_hat, y)
-
         y_pred = torch.softmax(y_hat, dim=-1)
 
-        # Logging to TensorBoard by default
-        self.log("train_loss", loss, prog_bar=True)
-        self.log("train_acc", accuracy(y_pred, y, task="multiclass", num_classes=self.num_classes), prog_bar=True)
-        self.log("train_f1", f1_score(y_pred, y, task="multiclass", num_classes=self.num_classes), prog_bar=True)
+        self.log(f"{prefix}_loss", loss, prog_bar=True)
+        self.log(f"{prefix}_acc", accuracy(y_pred, y, task="multiclass", num_classes=num_classes), prog_bar=True)
+        self.log(f"{prefix}_f1", f1_score(y_pred, y, task="multiclass", num_classes=num_classes), prog_bar=True)
 
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
         x, y = batch
-        y_hat = self(x)
+        if dataloader_idx == 0 or self.image_head is None:
+            y_hat = self.model.heads(self.model.encode(x))
+            num_classes = self.num_classes
+            prefix = "val"
+        else:
+            y_hat = self.image_head(self.model.encode(x))
+            num_classes = self.image_num_classes
+            prefix = "val_img"
 
         loss = self.loss_func(y_hat, y)
-
         y_pred = torch.softmax(y_hat, dim=-1)
 
-        # Logging to TensorBoard by default
-        self.log("val_loss", loss, prog_bar=True)
-        self.log("val_acc", accuracy(y_pred, y, task="multiclass", num_classes=self.num_classes), prog_bar=True)
-        self.log("val_f1", f1_score(y_pred, y, task="multiclass", num_classes=self.num_classes), prog_bar=True)
+        self.log(f"{prefix}_loss", loss, prog_bar=True)
+        self.log(f"{prefix}_acc", accuracy(y_pred, y, task="multiclass", num_classes=num_classes), prog_bar=True)
+        self.log(f"{prefix}_f1", f1_score(y_pred, y, task="multiclass", num_classes=num_classes), prog_bar=True)
 
         return loss
 
