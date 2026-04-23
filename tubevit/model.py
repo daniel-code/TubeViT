@@ -1,3 +1,4 @@
+import math
 from functools import partial
 from typing import Any, Callable, List, Union
 
@@ -11,6 +12,13 @@ from torchvision.models.vision_transformer import EncoderBlock
 from typing_extensions import OrderedDict
 
 from tubevit.positional_encoding import get_3d_sincos_pos_embed
+
+
+def _cosine_with_warmup_lr_lambda(current_step: int, warmup_steps: int, total_steps: int) -> float:
+    if current_step < warmup_steps:
+        return float(current_step) / float(max(1, warmup_steps))
+    progress = float(current_step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+    return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
 
 
 class Encoder(nn.Module):
@@ -248,7 +256,8 @@ class TubeViTLightningModule(pl.LightningModule):
         lr: float = 3e-4,
         weight_decay: float = 0,
         weight_path: str = None,
-        max_epochs: int = None,
+        warmup_steps: int = 0,
+        max_epochs: int = None,  # kept for checkpoint backward-compat; no longer drives the scheduler
         label_smoothing: float = 0.0,
         dropout: float = 0.0,
         attention_dropout: float = 0.0,
@@ -276,6 +285,7 @@ class TubeViTLightningModule(pl.LightningModule):
 
         if weight_path is not None:
             self.model.load_state_dict(torch.load(weight_path), strict=False)
+        self.warmup_steps = warmup_steps
         self.max_epochs = max_epochs
         self.weight_decay = weight_decay
 
@@ -317,13 +327,15 @@ class TubeViTLightningModule(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        if self.max_epochs is not None:
-            lr_scheduler = optim.lr_scheduler.OneCycleLR(
-                optimizer=optimizer, max_lr=self.lr, total_steps=self.max_epochs
-            )
-            return [optimizer], [lr_scheduler]
-        else:
-            return optimizer
+        total_steps = self.trainer.estimated_stepping_batches
+        scheduler = optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lambda step: _cosine_with_warmup_lr_lambda(step, self.warmup_steps, total_steps),
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {"scheduler": scheduler, "interval": "step"},
+        }
 
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
         x, y = batch

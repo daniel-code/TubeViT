@@ -26,6 +26,19 @@ from tubevit.model import TubeViTLightningModule
 @click.option("--seed", type=int, default=42, help="random seed.")
 @click.option("--preview-video", type=bool, is_flag=True, show_default=True, default=False, help="Show input video")
 @click.option(
+    "--lr", type=float, default=1e-4, show_default=True, help="Base LR (paper: 5e-5 for ViT-B, 1e-5 for ViT-L/H)."
+)
+@click.option(
+    "--weight-decay",
+    type=float,
+    default=0.001,
+    show_default=True,
+    help="Adam weight decay (paper: 0.001 for B, 1e-5 for L/H).",
+)
+@click.option(
+    "--warmup-steps", type=int, default=0, show_default=True, help="Linear warmup steps for LR schedule (paper: 10000)."
+)
+@click.option(
     "--interpolated-kernels",
     is_flag=True,
     default=False,
@@ -45,6 +58,9 @@ def main(
     fast_dev_run,
     seed,
     preview_video,
+    lr,
+    weight_decay,
+    warmup_steps,
     interpolated_kernels,
 ):
     pl.seed_everything(seed)
@@ -152,8 +168,9 @@ def main(
         num_heads=12,
         hidden_dim=768,
         mlp_dim=3072,
-        lr=1e-4,
-        weight_decay=0.001,
+        lr=lr,
+        weight_decay=weight_decay,
+        warmup_steps=warmup_steps,
         weight_path="tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt",
         max_epochs=max_epochs,
         interpolated_kernels=interpolated_kernels,

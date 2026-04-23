@@ -7,6 +7,7 @@ from tubevit.model import (
     SparseTubesTokenizer,
     TubeViT,
     TubeViTLightningModule,
+    _cosine_with_warmup_lr_lambda,
 )
 
 # Minimal valid shape for the hard-coded tube configs:
@@ -186,3 +187,67 @@ class TestTubeViTLightningModule:
 
     def test_example_input_array_shape(self, module):
         assert module.example_input_array.shape == (1, *VIDEO_SHAPE)
+
+    def test_warmup_steps_hparam_saved(self):
+        m = TubeViTLightningModule(
+            num_classes=NUM_CLASSES,
+            video_shape=VIDEO_SHAPE,
+            num_layers=NUM_LAYERS,
+            num_heads=NUM_HEADS,
+            hidden_dim=HIDDEN_DIM,
+            mlp_dim=MLP_DIM,
+            warmup_steps=500,
+        )
+        assert m.hparams.warmup_steps == 500
+
+
+class TestCosineWithWarmupLrLambda:
+    TOTAL = 100
+
+    # ── no warmup (warmup_steps=0) ──────────────────────────────────────────
+
+    def test_no_warmup_step0_is_one(self):
+        assert _cosine_with_warmup_lr_lambda(0, warmup_steps=0, total_steps=self.TOTAL) == 1.0
+
+    def test_no_warmup_final_step_is_zero(self):
+        v = _cosine_with_warmup_lr_lambda(self.TOTAL, warmup_steps=0, total_steps=self.TOTAL)
+        assert abs(v) < 1e-6
+
+    def test_no_warmup_midpoint_is_half(self):
+        v = _cosine_with_warmup_lr_lambda(self.TOTAL // 2, warmup_steps=0, total_steps=self.TOTAL)
+        assert abs(v - 0.5) < 1e-6
+
+    def test_no_warmup_monotone_decreasing(self):
+        vals = [_cosine_with_warmup_lr_lambda(s, 0, self.TOTAL) for s in range(self.TOTAL + 1)]
+        assert all(vals[i] >= vals[i + 1] for i in range(len(vals) - 1))
+
+    # ── with warmup ─────────────────────────────────────────────────────────
+
+    def test_warmup_step0_is_zero(self):
+        assert _cosine_with_warmup_lr_lambda(0, warmup_steps=10, total_steps=self.TOTAL) == 0.0
+
+    def test_warmup_end_is_one(self):
+        v = _cosine_with_warmup_lr_lambda(10, warmup_steps=10, total_steps=self.TOTAL)
+        assert abs(v - 1.0) < 1e-6
+
+    def test_warmup_midpoint_is_half(self):
+        v = _cosine_with_warmup_lr_lambda(5, warmup_steps=10, total_steps=self.TOTAL)
+        assert abs(v - 0.5) < 1e-6
+
+    def test_warmup_monotone_increasing(self):
+        vals = [_cosine_with_warmup_lr_lambda(s, 10, self.TOTAL) for s in range(11)]
+        assert all(vals[i] <= vals[i + 1] for i in range(len(vals) - 1))
+
+    def test_cosine_phase_monotone_decreasing(self):
+        vals = [_cosine_with_warmup_lr_lambda(s, 10, self.TOTAL) for s in range(10, self.TOTAL + 1)]
+        assert all(vals[i] >= vals[i + 1] for i in range(len(vals) - 1))
+
+    def test_final_step_with_warmup_is_zero(self):
+        v = _cosine_with_warmup_lr_lambda(self.TOTAL, warmup_steps=10, total_steps=self.TOTAL)
+        assert abs(v) < 1e-6
+
+    # ── clamp: never negative ────────────────────────────────────────────────
+
+    def test_never_negative(self):
+        for s in range(self.TOTAL + 5):
+            assert _cosine_with_warmup_lr_lambda(s, 10, self.TOTAL) >= 0.0
