@@ -5,7 +5,7 @@ import click
 import lightning.pytorch as pl
 import matplotlib.pyplot as plt
 import torch
-from torch.utils.data import ConcatDataset, DataLoader, RandomSampler
+from torch.utils.data import DataLoader, RandomSampler
 from torchvision.transforms import v2
 
 from tubevit.dataset import DomainTaggedDataset, Imagenette2Dataset, MyUCF101
@@ -112,12 +112,31 @@ def main(
     )
     imagenette_labels = [_IMAGENETTE_NAMES.get(c, c) for c in image_set.classes]
 
-    joint_set = ConcatDataset([DomainTaggedDataset(video_set, 0), DomainTaggedDataset(image_set, 1)])
+    n_video = batch_size // 2
+    n_image = batch_size - n_video
 
-    sampler = RandomSampler(joint_set, num_samples=batch_size)
-    loader = DataLoader(joint_set, batch_size=batch_size, sampler=sampler, num_workers=num_workers)
+    tagged_video = DomainTaggedDataset(video_set, 0)
+    tagged_image = DomainTaggedDataset(image_set, 1)
 
-    videos, labels, domains = next(iter(loader))
+    video_loader = DataLoader(
+        tagged_video,
+        batch_size=n_video,
+        sampler=RandomSampler(tagged_video, num_samples=n_video),
+        num_workers=num_workers,
+    )
+    image_loader = DataLoader(
+        tagged_image,
+        batch_size=n_image,
+        sampler=RandomSampler(tagged_image, num_samples=n_image),
+        num_workers=num_workers,
+    )
+
+    vv, vl, vd = next(iter(video_loader))
+    iv, il, id_ = next(iter(image_loader))
+
+    videos = torch.cat([vv, iv], dim=0)
+    labels = torch.cat([vl, il], dim=0)
+    domains = torch.cat([vd, id_], dim=0)
     # videos: (B, C, T, H, W)
 
     n_cols = 8  # frames to show per sample
