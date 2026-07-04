@@ -51,7 +51,7 @@ All model code is in `tubevit/`; all user-facing entry points are `click` CLIs i
 
 `TubeViT` composes four pieces, in order:
 
-1. **`SparseTubesTokenizer`** — the core idea of the paper. A **single** learnable 3D conv kernel (`conv_proj_weight`, shape `(hidden_dim, 3, *kernel_sizes[0])`) is **shared across all four tubes** by trilinear-interpolating it to each tube's `kernel_sizes[i]` at every forward pass (`F.interpolate(..., mode="trilinear")`). Each tube has its own bias (`conv_proj_bias[i]`), its own `offsets[i]` (applied as a slice on CTHW input), and its own `strides[i]`. The four tube configs are hard-coded in `TubeViT.__init__` — editing them requires regenerating positional embeddings and is incompatible with existing checkpoints. Output of each tube is flattened and concatenated along the token dimension.
+1. **`SparseTubesTokenizer`** — the core idea of the paper. **Default (`interpolated_kernels=False`, paper main results):** each tube has its **own independent 3D conv kernel** (`conv_proj_weights`, a `ParameterList` of 4 tensors with shapes matching each `kernel_sizes[i]`). **Ablation (`interpolated_kernels=True`, `--interpolated-kernels` CLI flag, paper Table 7e):** a **single** shared kernel (`conv_proj_weight`, singular, shape `(hidden_dim, 3, *kernel_sizes[0])`) is trilinearly resized to each tube's size at runtime. Each tube always has its own bias (`conv_proj_biases` ParameterList), its own `offsets[i]` (applied as a slice on CTHW input), and its own `strides[i]`. The four tube configs are hard-coded in `TubeViT.__init__` — editing them requires regenerating positional embeddings and is incompatible with existing checkpoints. Output of each tube is flattened and concatenated along the token dimension.
 
 2. **Position embedding** — built once in `_generate_position_embedding` using 3D sincos encoding (`tubevit/positional_encoding.py`). Crucially, positions are computed in *physical input-video coordinates* (`stride*i + offset + kernel_size/2`), not per-tube token indices, so tokens from different tubes share a consistent 3D location space. Stored as a non-trainable `nn.Parameter` and added after a CLS token is prepended.
 
@@ -61,7 +61,7 @@ All model code is in `tubevit/`; all user-facing entry points are `click` CLIs i
 
 `_calc_conv_shape` mirrors the Conv3d output-shape formula and is used only to size the positional embedding; keep it in sync with any tokenizer changes.
 
-`TubeViTLightningModule` wraps `TubeViT` with Adam + `OneCycleLR` (scheduler requires `max_epochs`), label-smoothed cross-entropy, and logs `{train,val}_{loss,acc,f1}` each step. Passing `weight_path` loads a state dict with `strict=False` — this is how `train.py` picks up the inflated ViT weights.
+`TubeViTLightningModule` wraps `TubeViT` with Adam + `LambdaLR` (cosine decay + linear warmup; `warmup_steps` param, total steps from `trainer.estimated_stepping_batches`), label-smoothed cross-entropy, and logs `{train,val}_{loss,acc,f1}` each step. Passing `weight_path` loads a state dict with `strict=False` — this is how `train.py` picks up the inflated ViT weights.
 
 ### `tubevit/dataset.py`
 
@@ -74,3 +74,11 @@ Takes `torchvision.ViT_B_16_Weights.DEFAULT`, then for the patch-embedding conv:
 ### Metadata pickles
 
 `ucf101-{train,val}-meta.pickle` are cached by `train.py`/`evaluate.py`/`visualise_dataset.py` at the repo root. They exist to avoid UCF101's slow first-time metadata scan; they are regenerated automatically if deleted. They are dataset-specific — invalidate them whenever `dataset-root`, `frames-per-clip`, or annotation splits change.
+
+### Checkpoint format compatibility
+
+The default `tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt` uses **independent-kernel format** (keys: `conv_proj_weights.{0..3}`). Running `train.py --interpolated-kernels` expects key `conv_proj_weight` (singular) — loading the wrong file silently random-inits the tokenizer (`strict=False` swallows the mismatch). Generate a separate compatible file first:
+
+```bash
+python scripts/convert_vit_weight.py --interpolated-kernels -o tubevit_b_interpolated.pt
+```
