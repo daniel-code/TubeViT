@@ -145,3 +145,9 @@ data/
 
 # tensorboard log
 *logs/
+
+# macOS
+.DS_Store
+
+# training checkpoints
+*.ckpt
