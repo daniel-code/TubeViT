@@ -22,7 +22,21 @@ from tubevit.model import TubeViTLightningModule
 @click.option("-nc", "--num-classes", type=int, default=101, help="num of classes of dataset.")
 @click.option("-b", "--batch-size", type=int, default=32, help="batch size.")
 @click.option("-f", "--frames-per-clip", type=int, default=32, help="frame per clip.")
+@click.option(
+    "-s",
+    "--step-between-clips",
+    type=int,
+    default=32,
+    show_default=True,
+    help="Frame stride between consecutive clips (32 = non-overlapping).",
+)
 @click.option("-v", "--video-size", type=click.Tuple([int, int]), default=(224, 224), help="frame per clip.")
+@click.option(
+    "--num-samples",
+    type=int,
+    default=None,
+    help="Evaluate on a random subset of this many clips (default: full validation set).",
+)
 @click.option("--num-workers", type=int, default=0)
 @click.option("--seed", type=int, default=42, help="random seed.")
 @click.option("--verbose", type=bool, is_flag=True, show_default=True, default=False, help="Show input video")
@@ -34,7 +48,9 @@ def main(
     num_classes,
     batch_size,
     frames_per_clip,
+    step_between_clips,
     video_size,
+    num_samples,
     num_workers,
     seed,
     verbose,
@@ -66,6 +82,7 @@ def main(
         annotation_path=annotation_path,
         _precomputed_metadata=val_precomputed_metadata,
         frames_per_clip=frames_per_clip,
+        step_between_clips=step_between_clips,
         train=False,
         output_format="THWC",
         transform=test_transform,
@@ -75,13 +92,13 @@ def main(
         with open(val_metadata_file, "wb") as f:
             pickle.dump(val_set.metadata, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    val_sampler = RandomSampler(val_set, num_samples=len(val_set) // 5000)
+    val_sampler = RandomSampler(val_set, num_samples=num_samples) if num_samples is not None else None
     val_dataloader = DataLoader(
         val_set,
         batch_size=batch_size,
         num_workers=num_workers,
         shuffle=False,
-        drop_last=True,
+        drop_last=False,
         sampler=val_sampler,
     )
 
