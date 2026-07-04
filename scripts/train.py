@@ -19,6 +19,15 @@ from tubevit.model import TubeViTLightningModule
 @click.option("-nc", "--num-classes", type=int, default=101, help="num of classes of dataset.")
 @click.option("-b", "--batch-size", type=int, default=32, help="batch size.")
 @click.option("-f", "--frames-per-clip", type=int, default=32, help="frame per clip.")
+@click.option(
+    "-s",
+    "--step-between-clips",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Frame stride between consecutive clips. 1 (torchvision default) yields ~2M clips on UCF-101; "
+    "use 32 for non-overlapping clips (~71k) on a single-GPU budget.",
+)
 @click.option("-v", "--video-size", type=click.Tuple([int, int]), default=(224, 224), help="frame per clip.")
 @click.option("--max-epochs", type=int, default=10, help="max epochs.")
 @click.option("--num-workers", type=int, default=0)
@@ -44,7 +53,22 @@ from tubevit.model import TubeViTLightningModule
     default=False,
     show_default=True,
     help="Share one conv kernel across tubes via trilinear interpolation (paper ablation). "
-    "Required when loading tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt.",
+    "Requires a weight file generated with `convert_vit_weight.py --interpolated-kernels` "
+    "(the default weight file uses independent per-tube kernels).",
+)
+@click.option(
+    "--precision",
+    type=click.Choice(["32-true", "bf16-mixed", "16-mixed"]),
+    default="32-true",
+    show_default=True,
+    help="Trainer precision. Use bf16-mixed on Ampere+ GPUs (e.g. RTX 4080) to halve activation memory.",
+)
+@click.option(
+    "--accumulate-grad-batches",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Gradient accumulation steps (effective batch = batch-size × this).",
 )
 @click.option(
     "--image-dataset-path",
@@ -59,6 +83,7 @@ def main(
     num_classes,
     batch_size,
     frames_per_clip,
+    step_between_clips,
     video_size,
     max_epochs,
     num_workers,
@@ -69,6 +94,8 @@ def main(
     weight_decay,
     warmup_steps,
     interpolated_kernels,
+    precision,
+    accumulate_grad_batches,
     image_dataset_path,
     image_num_classes,
 ):
@@ -126,6 +153,7 @@ def main(
         annotation_path=annotation_path,
         _precomputed_metadata=train_precomputed_metadata,
         frames_per_clip=frames_per_clip,
+        step_between_clips=step_between_clips,
         train=True,
         output_format="THWC",
         transform=train_transform,
@@ -146,6 +174,7 @@ def main(
         annotation_path=annotation_path,
         _precomputed_metadata=val_precomputed_metadata,
         frames_per_clip=frames_per_clip,
+        step_between_clips=step_between_clips,
         train=False,
         output_format="THWC",
         transform=test_transform,
@@ -240,6 +269,8 @@ def main(
     trainer = pl.Trainer(
         max_epochs=max_epochs,
         accelerator="auto",
+        precision=precision,
+        accumulate_grad_batches=accumulate_grad_batches,
         fast_dev_run=fast_dev_run,
         logger=logger,
         callbacks=callbacks,

@@ -84,6 +84,9 @@ image — and logs `train_loss` / `train_img_loss` (and corresponding `_acc`, `_
 |------|---------|-------------|
 | `-b` / `--batch-size` | 32 | Batch size |
 | `-f` / `--frames-per-clip` | 32 | Frames sampled per UCF-101 clip |
+| `-s` / `--step-between-clips` | 1 | Frame stride between clips. Default 1 yields ~2M overlapping clips on UCF-101 — use 32 (non-overlapping, ~71k clips) on a single-GPU budget |
+| `--precision` | `32-true` | Trainer precision; use `bf16-mixed` on Ampere+ GPUs (e.g. RTX 4080) |
+| `--accumulate-grad-batches` | 1 | Gradient accumulation (effective batch = batch × this) |
 | `--max-epochs` | 10 | Training epochs |
 | `--lr` | 1e-4 | Learning rate (paper: 5e-5 for ViT-B) |
 | `--weight-decay` | 0.001 | Adam weight decay |
