@@ -13,6 +13,14 @@ from tubevit.dataset import DomainTaggedDataset, Imagenette2Dataset, MyUCF101
 from tubevit.model import TubeViTLightningModule
 
 
+def _thwc_to_tchw(video: torch.Tensor) -> torch.Tensor:
+    return video.permute(0, 3, 1, 2)
+
+
+def _tchw_to_cthw(video: torch.Tensor) -> torch.Tensor:
+    return video.permute(1, 0, 2, 3)
+
+
 @click.command()
 @click.option("-r", "--dataset-root", type=click.Path(exists=True), required=True, help="path to dataset.")
 @click.option("-a", "--annotation-path", type=click.Path(exists=True), required=True, help="path to dataset.")
@@ -46,6 +54,18 @@ from tubevit.model import TubeViTLightningModule
 )
 @click.option(
     "--warmup-steps", type=int, default=0, show_default=True, help="Linear warmup steps for LR schedule (paper: 10000)."
+)
+@click.option(
+    "--dropout", type=float, default=0.0, show_default=True, help="Dropout applied before the encoder."
+)
+@click.option(
+    "--attention-dropout", type=float, default=0.0, show_default=True, help="Dropout applied inside self-attention."
+)
+@click.option(
+    "--early-stopping-patience",
+    type=int,
+    default=None,
+    help="Stop training if val_loss doesn't improve for this many validation checks. Disabled by default.",
 )
 @click.option(
     "--interpolated-kernels",
@@ -93,6 +113,9 @@ def main(
     lr,
     weight_decay,
     warmup_steps,
+    dropout,
+    attention_dropout,
+    early_stopping_patience,
     interpolated_kernels,
     precision,
     accumulate_grad_batches,
@@ -106,22 +129,22 @@ def main(
 
     train_transform = v2.Compose(
         [
-            v2.Lambda(lambda x: x.permute(0, 3, 1, 2)),  # THWC→TCHW uint8
+            v2.Lambda(_thwc_to_tchw),  # THWC→TCHW uint8
             v2.Resize(size=video_size, antialias=True),
             v2.RandAugment(num_ops=2, magnitude=10),
             v2.ToDtype(torch.float32, scale=True),
             v2.Normalize(mean=imagenet_mean, std=imagenet_std),
-            v2.Lambda(lambda x: x.permute(1, 0, 2, 3)),  # TCHW→CTHW
+            v2.Lambda(_tchw_to_cthw),  # TCHW→CTHW
         ]
     )
 
     test_transform = v2.Compose(
         [
-            v2.Lambda(lambda x: x.permute(0, 3, 1, 2)),  # THWC→TCHW uint8
+            v2.Lambda(_thwc_to_tchw),  # THWC→TCHW uint8
             v2.Resize(size=video_size, antialias=True),
             v2.ToDtype(torch.float32, scale=True),
             v2.Normalize(mean=imagenet_mean, std=imagenet_std),
-            v2.Lambda(lambda x: x.permute(1, 0, 2, 3)),  # TCHW→CTHW
+            v2.Lambda(_tchw_to_cthw),  # TCHW→CTHW
         ]
     )
 
@@ -184,6 +207,15 @@ def main(
         with open(val_metadata_file, "wb") as f:
             pickle.dump(val_set.metadata, f, protocol=pickle.HIGHEST_PROTOCOL)
 
+    # "spawn" avoids inheriting the parent's CUDA-initialized memory image via
+    # fork's copy-on-write. persistent_workers is deliberately NOT set: worker
+    # RSS grows steadily with items decoded (see MyUCF101._get_video_clip),
+    # so tearing workers down and recreating them each epoch is what bounds
+    # that growth rather than letting it accumulate for the whole run.
+    multiprocess_loader_kwargs = {}
+    if num_workers > 0:
+        multiprocess_loader_kwargs["multiprocessing_context"] = "spawn"
+
     train_dataloader = DataLoader(
         train_set,
         batch_size=batch_size,
@@ -191,6 +223,7 @@ def main(
         shuffle=True,
         drop_last=True,
         pin_memory=True,
+        **multiprocess_loader_kwargs,
     )
 
     val_dataloader = DataLoader(
@@ -200,6 +233,7 @@ def main(
         shuffle=False,
         drop_last=True,
         pin_memory=True,
+        **multiprocess_loader_kwargs,
     )
 
     if image_dataset_path is not None:
@@ -223,6 +257,7 @@ def main(
             shuffle=True,
             drop_last=True,
             pin_memory=True,
+            **multiprocess_loader_kwargs,
         )
         val_dataloader = DataLoader(
             joint_val_set,
@@ -231,6 +266,7 @@ def main(
             shuffle=False,
             drop_last=True,
             pin_memory=True,
+            **multiprocess_loader_kwargs,
         )
 
     x = next(iter(train_dataloader))[0]
@@ -259,11 +295,18 @@ def main(
         warmup_steps=warmup_steps,
         weight_path="tubevit_b_(a+iv)+(d+v)+(e+iv)+(f+v).pt",
         max_epochs=max_epochs,
+        dropout=dropout,
+        attention_dropout=attention_dropout,
         interpolated_kernels=interpolated_kernels,
         image_num_classes=image_num_classes if image_dataset_path is not None else None,
     )
 
-    callbacks = [pl.callbacks.LearningRateMonitor(logging_interval="epoch")]
+    callbacks = [
+        pl.callbacks.LearningRateMonitor(logging_interval="epoch"),
+        pl.callbacks.ModelCheckpoint(monitor="val_loss", mode="min", save_top_k=1, filename="best-{epoch}-{step}"),
+    ]
+    if early_stopping_patience is not None:
+        callbacks.append(pl.callbacks.EarlyStopping(monitor="val_loss", mode="min", patience=early_stopping_patience))
     logger = TensorBoardLogger("logs", name="TubeViT")
 
     trainer = pl.Trainer(
@@ -274,6 +317,7 @@ def main(
         fast_dev_run=fast_dev_run,
         logger=logger,
         callbacks=callbacks,
+        val_check_interval=0.2,
     )
     trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
     trainer.save_checkpoint("./models/tubevit_ucf101.ckpt")

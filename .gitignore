@@ -151,3 +151,7 @@ data/
 
 # training checkpoints
 *.ckpt
+
+# Claude Code local machine-specific config
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
