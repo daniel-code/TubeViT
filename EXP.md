@@ -78,7 +78,7 @@ mv models/tubevit_ucf101.ckpt models/_pre_b2_backup.ckpt 2>/dev/null || true
 | `--dropout` / `--attention-dropout` | 0.1 / 0.1 | |
 | `--label-smoothing` | 0.1 | 新 CLI |
 | early stopping | 關閉（不傳 flag） | |
-| `--num-workers` | 4 | 影片解碼是瓶頸 |
+| `--num-workers` | 2 | 依訓練機器實測固定為 2 |
 | `--seed` | 42（見 §5） | |
 
 ---
@@ -106,7 +106,7 @@ uv run python scripts/train.py \
   -f 32 -s 16 -b 8 --accumulate-grad-batches 32 --precision bf16-mixed \
   --max-epochs 8 --lr 5e-5 --weight-decay 0.001 --warmup-steps 200 \
   --dropout 0.1 --attention-dropout 0.1 --label-smoothing 0.1 \
-  --num-workers 4 --seed 42 \
+  --num-workers 2 --seed 42 \
   --image-dataset-path $DATA_ROOT/imagenette2-320 --image-num-classes 10
 mv models/tubevit_ucf101.ckpt models/b2_b_joint.ckpt
 ```
