@@ -60,6 +60,13 @@ def _tchw_to_cthw(video: torch.Tensor) -> torch.Tensor:
     "--attention-dropout", type=float, default=0.0, show_default=True, help="Dropout applied inside self-attention."
 )
 @click.option(
+    "--label-smoothing",
+    type=float,
+    default=0.0,
+    show_default=True,
+    help="Label smoothing for cross-entropy loss.",
+)
+@click.option(
     "--early-stopping-patience",
     type=int,
     default=None,
@@ -113,6 +120,7 @@ def main(
     warmup_steps,
     dropout,
     attention_dropout,
+    label_smoothing,
     early_stopping_patience,
     interpolated_kernels,
     precision,
@@ -295,13 +303,16 @@ def main(
         max_epochs=max_epochs,
         dropout=dropout,
         attention_dropout=attention_dropout,
+        label_smoothing=label_smoothing,
         interpolated_kernels=interpolated_kernels,
         image_num_classes=image_num_classes if image_dataset_path is not None else None,
     )
 
     callbacks = [
         pl.callbacks.LearningRateMonitor(logging_interval="epoch"),
-        pl.callbacks.ModelCheckpoint(monitor="val_loss", mode="min", save_top_k=1, filename="best-{epoch}-{step}"),
+        pl.callbacks.ModelCheckpoint(
+            monitor="val_acc", mode="max", save_top_k=1, save_last=True, filename="best-{epoch}-{step}"
+        ),
     ]
     if early_stopping_patience is not None:
         callbacks.append(pl.callbacks.EarlyStopping(monitor="val_loss", mode="min", patience=early_stopping_patience))
