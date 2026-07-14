@@ -11,9 +11,7 @@ from torchvision.transforms import v2
 
 
 class MyUCF101(UCF101):
-    def __init__(
-        self, transform: Optional[Callable] = None, decoder_cache_size: int = 4, *args, **kwargs
-    ) -> None:
+    def __init__(self, transform: Optional[Callable] = None, decoder_cache_size: int = 4, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.transform = transform
         self._decoder_cache_size = decoder_cache_size

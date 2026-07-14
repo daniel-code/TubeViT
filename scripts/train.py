@@ -55,9 +55,7 @@ def _tchw_to_cthw(video: torch.Tensor) -> torch.Tensor:
 @click.option(
     "--warmup-steps", type=int, default=0, show_default=True, help="Linear warmup steps for LR schedule (paper: 10000)."
 )
-@click.option(
-    "--dropout", type=float, default=0.0, show_default=True, help="Dropout applied before the encoder."
-)
+@click.option("--dropout", type=float, default=0.0, show_default=True, help="Dropout applied before the encoder.")
 @click.option(
     "--attention-dropout", type=float, default=0.0, show_default=True, help="Dropout applied inside self-attention."
 )
